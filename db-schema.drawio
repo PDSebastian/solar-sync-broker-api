@@ -1,0 +1,105 @@
+<mxfile host="app.diagrams.net" agent="claude" version="24.0.0">
+  <diagram id="solarsync-db" name="SolarSyncBroker DB">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="SolarSyncBroker — schema bazei de date (MySQL, Flyway V1..V9)" style="text;html=1;fontSize=18;fontStyle=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="800" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="users" value="&lt;b&gt;users&lt;/b&gt; (V1)&#10;PK  id&#10;     first_name&#10;     last_name&#10;UQ  email&#10;     password&#10;     user_type  [ADMIN|OPERATOR|USER|AGENT]&#10;     enabled&#10;     created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="240" height="170" as="geometry" />
+        </mxCell>
+
+        <mxCell id="user_permissions" value="&lt;b&gt;user_permissions&lt;/b&gt; (V1)&#10;FK  user_id  -&gt; users.id&#10;     permission  [enum UserPermissions]" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="40" y="270" width="240" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="houses" value="&lt;b&gt;houses&lt;/b&gt; (V2)&#10;PK  id&#10;     name&#10;FK  owner_id  -&gt; users.id&#10;     enabled&#10;     pv_peak_power_kw&#10;     max_import_power_kw&#10;     max_export_power_kw&#10;     created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="60" width="240" height="170" as="geometry" />
+        </mxCell>
+
+        <mxCell id="batteries" value="&lt;b&gt;batteries&lt;/b&gt; (V3)&#10;PK  id&#10;FK  house_id  -&gt; houses.id  (UQ)&#10;     capacity_kwh&#10;     soc_percent&#10;     min_soc_percent / max_soc_percent&#10;     max_charge_power_kw&#10;     max_discharge_power_kw&#10;     charge_efficiency / discharge_efficiency&#10;     status&#10;     version  (optimistic lock)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="360" y="280" width="270" height="190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="telemetry" value="&lt;b&gt;telemetry&lt;/b&gt; (V4)&#10;PK  id&#10;FK  house_id  -&gt; houses.id&#10;     recorded_at&#10;     simulation_time&#10;     pv_power_kw / load_power_kw&#10;     battery_power_kw / net_power_kw&#10;     soc_percent&#10;     market_price&#10;IDX (house_id, recorded_at)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="700" y="60" width="260" height="190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="market_price" value="&lt;b&gt;market_price&lt;/b&gt; (V6)&#10;PK  id&#10;     valid_from&#10;     valid_until&#10;     price_per_kwh&#10;     source&#10;     scenario" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="700" y="300" width="240" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="financial_transaction" value="&lt;b&gt;financial_transaction&lt;/b&gt; (V8)&#10;PK  id&#10;FK  house_id  -&gt; houses.id&#10;     recorded_at&#10;     type  [BUY|SELL]&#10;     energy_kwh&#10;     unit_price  (BigDecimal)&#10;     amount  (BigDecimal)" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="60" width="260" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grid_snapshot" value="&lt;b&gt;grid_snapshot&lt;/b&gt; (V7)&#10;PK  id&#10;     recorded_at&#10;     total_import_kw / total_export_kw&#10;     transformer_load_kw&#10;     operational_limit_kw&#10;     status" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="260" width="260" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grid_alert" value="&lt;b&gt;grid_alert&lt;/b&gt; (V7)&#10;PK  id&#10;     type / severity / message&#10;     created_at / resolved_at&#10;FK  related_house_id  -&gt; houses.id&#10;FK  related_plan_id  -&gt; agent_plan.id" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="450" width="260" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agent_run" value="&lt;b&gt;agent_run&lt;/b&gt; (V9)&#10;PK  id&#10;     trigger_type / trigger_payload&#10;     mode / provider / model&#10;     status&#10;     started_at / finished_at&#10;     failure_reason&#10;     token_usage / estimated_cost" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="560" width="260" height="170" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agent_plan" value="&lt;b&gt;agent_plan&lt;/b&gt; (V9)&#10;PK  id&#10;FK  agent_run_id  -&gt; agent_run.id&#10;     status / objective&#10;     plan_json&#10;     expected_profit&#10;     expected_transformer_peak_kw&#10;     confidence&#10;     created_at&#10;     approved_by / approved_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="360" y="560" width="260" height="190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="agent_tool_call" value="&lt;b&gt;agent_tool_call&lt;/b&gt; (V9)&#10;PK  id&#10;FK  agent_run_id  -&gt; agent_run.id&#10;     tool_name&#10;     arguments_json / result_json&#10;     status&#10;     started_at / finished_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="770" width="260" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="command_execution" value="&lt;b&gt;command_execution&lt;/b&gt; (V5)&#10;PK  id&#10;FK  plan_id  -&gt; agent_plan.id  (nullable: comenzi manuale)&#10;FK  house_id  -&gt; houses.id&#10;     action  [CHARGE|DISCHARGE|IDLE]&#10;     requested_power_kw / applied_power_kw&#10;     duration_seconds&#10;     status / failure_reason&#10;     created_at / executed_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="1">
+          <mxGeometry x="680" y="560" width="320" height="200" as="geometry" />
+        </mxCell>
+
+        <mxCell id="legend" value="&lt;b&gt;Legendă&lt;/b&gt;&#10;PK = primary key   FK = foreign key   UQ = unique   IDX = index&#10;Albastru = identitate/acces · Verde = comunitate · Portocaliu = piață/grid/financiar · Mov = agent AI" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="680" y="790" width="600" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_users_perm" style="endArrow=ERmany;startArrow=ERone;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="users" target="user_permissions">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_users_houses" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="users" target="houses">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_house_battery" style="endArrow=ERone;startArrow=ERone;html=1;" edge="1" parent="1" source="houses" target="batteries">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_house_telemetry" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="houses" target="telemetry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_house_financial" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="houses" target="financial_transaction">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_house_cmd" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="houses" target="command_execution">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_house_alert" style="endArrow=ERmany;startArrow=ERzeroToOne;html=1;dashed=1;" edge="1" parent="1" source="houses" target="grid_alert">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_run_plan" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="agent_run" target="agent_plan">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_run_tool" style="endArrow=ERmany;startArrow=ERone;html=1;" edge="1" parent="1" source="agent_run" target="agent_tool_call">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plan_cmd" style="endArrow=ERmany;startArrow=ERzeroToOne;html=1;dashed=1;" edge="1" parent="1" source="agent_plan" target="command_execution">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_plan_alert" style="endArrow=ERmany;startArrow=ERzeroToOne;html=1;dashed=1;" edge="1" parent="1" source="agent_plan" target="grid_alert">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,427 +1,1056 @@
 # Backlog — API SolarSyncBroker
 
-Implementarea REST API a backend-ului `solar-sync-broker-api`, în ordinea din `../../PLAN_PROIECT.md` (secțiunea 18). Recapitulare Spring pe parcurs: `../../RECAP_SPRING.md`.
+Backlog **Jira-style** pentru backend-ul `solar-sync-broker-api`, organizat pe **funcționalități** (EPIC) sparte în **stories** mici (~1 commit). Ordinea respectă dependențele din `../../PLAN_PROIECT.md`. Recap Spring: `../../RECAP_SPRING.md`. Schema DB: **`db-schema.drawio`**.
 
-**Convenție:**
-- fiecare **Story = un commit separat**; task-urile = pași în ordine. Bifează cu `[x]` ce ai terminat.
-- structură **vertical-slice** pe domeniu: `controller / dtos / exceptions / mapper / model / repository / service/{commandService,queryService}` (folderele există deja, goale).
-- entitățile NU se expun direct — request/response prin DTO-uri.
-- erori în engleză; fără comentarii în cod.
-- DB: **MySQL** (schema doar prin Flyway, `ddl-auto: validate`); bani cu `BigDecimal`.
-- la finalul fiecărui Story: `./mvnw clean compile` verde + commit.
+**Arhitectura de cod = ca în `sebastian-online-school`** (vezi „Arhitectură"): vertical-slice pe domeniu, servicii `command`/`query` (interfață + `Impl`), mappere statice, erori prin `ApiErrorResponse` + `ErrorConstants`, securitate pe `UserType` + `UserPermissions` cu `hasAuthority(...)`.
 
-**Roluri** (vezi PLAN 6.1): `ADMIN` (toată comunitatea + control), `OPERATOR` (analiză + aprobare acțiuni), `USER` (doar casa proprie). `AGENT` = identitate internă, fără HTTP.
+**Nivel asumat:** știi **Spring Boot, Data JPA, Security**. Noutățile — **Docker** (EPIC 14) și **Spring AI** (EPIC 10–11) — sunt marcate **📘 înveți aici**.
 
----
-
-## Harta EPIC-urilor (ordinea de implementare)
-
-| EPIC | Temă | Depinde de | Etapă PLAN |
-|------|------|-----------|------------|
-| A | Convenții, erori, OpenAPI | — | 1 |
-| B | Autentificare & Utilizatori | A | 2 |
-| C | Case & Baterii (CRUD) | B | 2 |
-| D | Lifecycle simulare + telemetrie | C | 3 |
-| E | Energie, baterii (dispatch), piață | D | 4 |
-| F | Protecția transformatorului (grid) | E | 5 |
-| G | Contabilitate financiară | E | 4 |
-| H | Agent: status & runs (ADVISORY) | E, F | 6 |
-| I | Planuri: simulare, validare, aprobare, execuție | H | 6-7 |
-| J | Audit & rapoarte | toate | 10 |
-| K | WebSocket (dashboard) | D, F, H | 9 |
-
-Oprește-te la EPIC I în mod **ADVISORY** pentru licență (vezi RECAP, Modul 9). Execuția reală (SUPERVISED/AUTONOMOUS) e „dezvoltare viitoare".
+**Cum se citește un story-card:**
+- `[F<epic>-S<nr>]` id · **Prioritate** (High/Med/Low) · **Points** (1/2/3/5/8, efort relativ) · **Dep** (story-uri necesare înainte).
+- **Ca … vreau … ca să …** = de ce există story-ul.
+- **Acceptance (Gherkin)** = când e gata (scrii testele după scenarii).
+- **Tasks** = pașii pe straturi. **DoD** = checklist final (vezi și DoD global jos).
 
 ---
 
-# EPIC A — Convenții, erori, OpenAPI
+## Arhitectură (model: `sebastian-online-school`)
 
-**Goal:** fundația peste care se construiește orice endpoint — format de eroare unitar, OpenAPI, auditare automată a entităților, parametrii fizici externalizați.
+### Structura unui domeniu (vertical-slice)
+```
+<domeniu>/
+├── controller/        @RestController, @PreAuthorize, log.debug, ResponseEntity
+├── dtos/              Request (class @Data) + PatchRequest (record) + *Response (record)
+├── exceptions/        XNotFoundException, XAlreadyExistsException ... extends RuntimeException
+├── mapper/            XMapper — clasă cu metode STATICE toEntity / toDto
+├── model/             X — @Entity, Bean Validation, equals/hashCode/toString
+├── repository/        XRepository extends JpaRepository
+└── service/
+    ├── commandService/   XCommandService + XCommandServiceImpl   → scrieri, @Transactional
+    └── queryService/     XQueryService  + XQueryServiceImpl      → citiri
+```
+**CQRS-lite:** scrierile în `commandService`, citirile în `queryService`; fiecare interfață + `Impl` (`@Component`, injecție prin constructor).
 
-## Story A1 — Problem Details + handler global
+### Schelete de referință (fără comentarii în cod)
+```java
+public interface HouseCommandService {
+    HouseResponse createHouse(HouseRequest request);
+}
 
-**Acceptance:** orice eroare iese în format `application/problem+json` cu `errorCode`, status HTTP corect.
+@Component
+public class HouseCommandServiceImpl implements HouseCommandService {
+    private final HouseRepository houseRepository;
+    public HouseCommandServiceImpl(HouseRepository houseRepository) { this.houseRepository = houseRepository; }
 
-- [ ] **A1.1** În `system/exceptions/` creează `ApiException` (abstractă, `extends RuntimeException`) cu câmpuri `HttpStatus status`, `String errorCode`.
-- [ ] **A1.2** `system/exceptions/GlobalExceptionHandler.java` cu `@RestControllerAdvice`:
-  - handler pentru `ApiException` → construiește `ProblemDetail` (`ProblemDetail.forStatusAndDetail(...)`) + proprietatea `errorCode`.
-  - handler pentru `MethodArgumentNotValidException` → 422 `VALIDATION_ERROR`, cu lista de câmpuri invalide (altfel primești 500).
-  - handler fallback `Exception` → 500 `INTERNAL_ERROR` (fără stack trace în body).
-- [ ] **A1.3** Verify: un controller dummy care aruncă o `ApiException` întoarce body conform exemplului din PLAN secțiunea 10.
+    @Override @Transactional
+    public HouseResponse createHouse(HouseRequest request) {
+        if (houseRepository.existsByName(request.getName())) throw new HouseAlreadyExistsException();
+        return HouseMapper.toDto(houseRepository.save(HouseMapper.toEntity(request)));
+    }
+}
 
-## Story A2 — OpenAPI / Swagger
+public class HouseMapper {
+    public static House toEntity(HouseRequest r) { return House.builder()...build(); }
+    public static HouseResponse toDto(House h) { return new HouseResponse(...); }
+}
 
-**Acceptance:** Swagger UI accesibil, cu titlu și schema de securitate Bearer.
+public class HouseNotFoundException extends RuntimeException {
+    public HouseNotFoundException() { super(ErrorConstants.HOUSE_NOT_FOUND_ERROR); }
+}
 
-- [ ] **A2.1** `system/config/OpenApiConfig.java` cu `@Bean OpenAPI` — titlu „SolarSyncBroker API", versiune, security scheme `bearerAuth` (HTTP, JWT).
-- [ ] **A2.2** Verify: `http://localhost:8080/swagger-ui.html` se încarcă (springdoc deja în pom).
+@RestController @RequestMapping("/api/v1/houses") @Slf4j
+public class HouseController {
+    private final HouseCommandService commandService;
+    private final HouseQueryService queryService;
+    public HouseController(HouseCommandService c, HouseQueryService q) { this.commandService = c; this.queryService = q; }
 
-## Story A3 — Auditing & ConfigurationProperties
+    @PostMapping @PreAuthorize("hasAuthority('HOUSE_MANAGE')")
+    public ResponseEntity<HouseResponse> create(@Valid @RequestBody HouseRequest request) {
+        log.debug("http post /api/v1/houses");
+        return ResponseEntity.status(HttpStatus.CREATED).body(commandService.createHouse(request));
+    }
+}
+```
 
-**Acceptance:** entitățile au `createdAt` automat; parametrii fizici sunt tipizați, nu împrăștiați.
+### Cross-cutting (`system/` + `auth/` + `users/`)
+```
+system/   config/ (OpenApiConfig, ClockConfig, *Properties) · constants/ (ErrorConstants, HintsConstants) · exceptions/ (ApiErrorResponse, GlobalExceptionsHandler)
+auth/     controller/ · dtos/ · exceptions/ · service/ (AuthService + AuthServiceImpl)
+users/    dtos/ · exceptions/ · jwt/ (JWTTokenProvider) · mapper/ · model/ (User implements UserDetails, UserType) · repository/ · security/ (SecurityConfiguration, SecurityConstants, UserPermissions, JwtAuthenticationEntryPoint, SecurityAccessDeniedHandler) · service/ (UserDetailService + Impl)
+```
 
-- [ ] **A3.1** `@EnableJpaAuditing` (în config) + o clasă bază `AbstractAuditable` (`@MappedSuperclass`) cu `@CreatedDate Instant createdAt`. Domeniile o pot extinde.
-- [ ] **A3.2** `system/config/SimulationProperties.java` cu `@ConfigurationProperties(prefix="solarsync.simulation")` — `seed`, `tickSeconds`, `realToVirtualRatio`.
-- [ ] **A3.3** `system/config/GridProperties.java` — `transformerNominalKw`, `safetyMarginPercent`.
-- [ ] **A3.4** `system/config/AgentProperties.java` — `mode` (enum DISABLED/ADVISORY/SUPERVISED/AUTONOMOUS), `planningIntervalSeconds`. Default `ADVISORY`.
-- [ ] **A3.5** Adaugă cheile în `application.yml` cu valori implicite. NU pune secrete.
+### Erori — `ApiErrorResponse`, NU `ProblemDetail`
+```java
+@Builder
+public record ApiErrorResponse(String timestamp, int status, String error, String message, String path) {}
+```
+`GlobalExceptionsHandler` (`@RestControllerAdvice`) grupează pe status: `*NotFoundException`→404, `*AlreadyExistsException`→409, validare→400/422, fallback→500. Mesaje din `ErrorConstants`, în **engleză**.
 
-## Story A4 — Clock injectabil
+### Securitate — `UserType` + `UserPermissions` + `hasAuthority`
+- `User implements UserDetails` cu `UserType` (enum) și `Set<UserPermissions>` (`@ElementCollection`, tabel `user_permissions`); `getAuthorities()` din permisiuni.
+- token JWT emis cu `JWTTokenProvider` (jjwt, HS512, claim `authorities`), **validat** prin `oauth2ResourceServer().jwt(NimbusJwtDecoder)`.
+- `SecurityConfiguration`: stateless, `@EnableMethodSecurity`, `DaoAuthenticationProvider` + `BCryptPasswordEncoder`, `PUBLIC_URLS` + `publicAwareBearerTokenResolver`.
+- pe endpoint: `@PreAuthorize("hasAuthority('...')")`. Config: `application.jwt.secretKey=${JWT_SECRET_KEY}`.
 
-**Acceptance:** nicăieri `Instant.now()` direct; timpul vine dintr-un bean.
+### Matricea de permisiuni (`UserPermissions`)
+| Permisiune | ADMIN | OPERATOR | USER | unde |
+|---|:--:|:--:|:--:|---|
+| `HOUSE_VIEW` | ✓ | ✓ | ✓¹ | GET case/state |
+| `HOUSE_MANAGE` | ✓ | | | POST/PATCH case |
+| `BATTERY_VIEW` | ✓ | ✓ | ✓¹ | GET baterie |
+| `BATTERY_CONFIG` | ✓ | | | PATCH config |
+| `BATTERY_COMMAND` | ✓ | ✓ | | comenzi baterie |
+| `SIMULATION_CONTROL` | ✓ | | | start/pause/stop/reset |
+| `TELEMETRY_VIEW` | ✓ | ✓ | ✓¹ | GET telemetrie |
+| `COMMUNITY_VIEW` | ✓ | ✓ | | GET community/* |
+| `MARKET_VIEW` | ✓ | ✓ | ✓ | GET preț/istoric |
+| `MARKET_MANAGE` | ✓ | | | POST scenarii |
+| `GRID_VIEW` | ✓ | ✓ | | GET grid/alerte |
+| `FINANCIAL_VIEW` | ✓ | ✓ | ✓¹ | GET financial-summary |
+| `AGENT_VIEW` | ✓ | ✓ | | GET status/runs/plans |
+| `AGENT_CONFIG` | ✓ | | | PATCH agent config |
+| `AGENT_OPERATE` | ✓ | ✓ | | run/approve/reject/execute/emergency-stop |
+| `AUDIT_VIEW` | ✓ | ✓ | | GET audit/rapoarte |
 
-- [ ] **A4.1** `system/config/ClockConfig.java` cu `@Bean Clock` (real). În teste injectezi un `Clock.fixed(...)`.
+¹ `USER` are permisiunea dar vede **doar casa proprie** — owner check **în service** (`getXForCaller`), nu din adnotare.
 
----
+### Diferit față de online-school (intenționat)
+| Aspect | online-school | solar | de ce |
+|---|---|---|---|
+| Schema DB | `ddl-auto: update` | **Flyway** + `validate` | versionat, reproductibil |
+| Prefix API | `/api/v2` | `/api/v1` | PLAN |
+| Bani | — | `BigDecimal` | corectitudine financiară |
 
-# EPIC B — Autentificare & Utilizatori
-
-**Goal:** JWT login/register, roluri, baza pentru „un user vede doar casa lui".
-
-## Story B1 — Entități User & Role
-
-- [ ] **B1.1** Migrație Flyway `V1__users.sql`: tabele `users` (id, email unique, password_hash, enabled, created_at) și `user_roles` (user_id, role). (PLAN 9.1)
-- [ ] **B1.2** `users/model/User.java` (`@Entity @Table(name="users")`), `users/model/Role.java` (enum ADMIN/OPERATOR/USER/AGENT).
-- [ ] **B1.3** `users/repository/UserRepository.java`: `Optional<User> findByEmail(String)`, `boolean existsByEmail(String)`.
-- [ ] **B1.4** Verify: `./mvnw flyway:migrate` (sau boot) creează tabelele; `ddl-auto: validate` trece.
-
-## Story B2 — Security config + JWT
-
-- [ ] **B2.1** `users/jwt/JwtService.java` — emitere (`generateToken(User)`) și parsare cu jjwt; cheia din `${JWT_SECRET_KEY}` (env, fallback doar dev).
-- [ ] **B2.2** `users/jwt/JwtAuthFilter.java` (`OncePerRequestFilter`) — extrage Bearer, validează, setează `SecurityContext`.
-- [ ] **B2.3** `system/config/SecurityConfiguration.java`: `SecurityFilterChain` stateless, `@EnableMethodSecurity`, `BCryptPasswordEncoder`, filtrul JWT înainte de `UsernamePasswordAuthenticationFilter`. CSRF off (conștient, API stateless).
-- [ ] **B2.4** Reguli `requestMatchers`: `/api/v1/auth/**`, `/swagger-ui/**`, `/v3/api-docs/**`, `/actuator/health` → permitAll; restul → authenticated.
-
-## Story B3 — Auth endpoints
-
-**Acceptance:** register + login funcționează, întorc JWT.
-
-- [ ] **B3.1** DTO-uri în `auth/dtos/`: `RegisterRequest` (email, password, opțional role), `LoginRequest`, `AuthResponse` (accessToken, expiresAt).
-- [ ] **B3.2** `auth/service/...` — `register` (hash parolă, save, rol implicit USER), `login` (autentifică, emite token).
-- [ ] **B3.3** `auth/controller/AuthController.java`:
-
-  | Method | Path | Acces | Notă |
-  |---|---|---|---|
-  | POST | `/api/v1/auth/register` | public | 201 |
-  | POST | `/api/v1/auth/login` | public | 200 + token |
-  | GET | `/api/v1/auth/me` | authenticated | userul curent |
-  | POST | `/api/v1/auth/logout` | authenticated | (stateless: client drop token) |
-
-- [ ] **B3.4** `auth/exceptions/`: `EmailAlreadyUsedException` (409), `InvalidCredentialsException` (401). Înregistrează-le în handler-ul global.
-- [ ] **B3.5** Verify (curl/Postman): register → login → `GET /me` cu Bearer întoarce 200; fără token → 401.
-
-> `refresh` token: opțional în MVP (PLAN 19). Sari peste dacă nu îți trebuie.
-
----
-
-# EPIC C — Case & Baterii
-
-**Goal:** CRUD case + baterii, cu regula de izolare „USER vede doar casa lui".
-
-## Story C1 — Entitatea House
-
-- [ ] **C1.1** `V2__houses.sql`: `houses` (id, name, owner_id FK users, enabled, pv_peak_power_kw, max_import_power_kw, max_export_power_kw, created_at). (PLAN 9 House)
-- [ ] **C1.2** `house/model/House.java` + `house/repository/HouseRepository.java` (`findByOwnerId`, `findByIdAndOwnerId`).
-- [ ] **C1.3** DTO-uri `house/dtos/`: `HouseRequest`, `HousePatchRequest`, `HouseResponse`, `HouseStateResponse`. Validare `@Positive` pe puteri.
-- [ ] **C1.4** `house/mapper/HouseMapper.java` (entity → response).
-
-## Story C2 — House services + controller
-
-**Acceptance:** ADMIN vede toate casele; USER doar pe a lui (403 altfel), verificat **în service**.
-
-- [ ] **C2.1** `house/service/queryService/` — `getAllHouses()` (ADMIN), `getHouseForCaller(id, caller)` (verifică owner).
-- [ ] **C2.2** `house/service/commandService/` — `createHouse`, `updateHouse` (PUT), `patchHouse` (PATCH), `deleteHouse`.
-- [ ] **C2.3** `house/controller/HouseController.java`:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/houses` | `hasRole('ADMIN')` |
-  | POST | `/api/v1/houses` | `hasRole('ADMIN')` |
-  | GET | `/api/v1/houses/{id}` | ADMIN sau owner (check în service) |
-  | PATCH | `/api/v1/houses/{id}` | `hasRole('ADMIN')` |
-  | GET | `/api/v1/houses/{id}/state` | ADMIN sau owner |
-
-- [ ] **C2.4** `house/exceptions/`: `HouseNotFoundException` (404), `HouseAccessDeniedException` (403).
-- [ ] **C2.5** Verify: 2 useri — owner primește 200 pe casa lui, alt USER primește 403 pe `/houses/{altId}`.
-
-## Story C3 — Battery
-
-- [ ] **C3.1** `V3__batteries.sql`: `batteries` (id, house_id unique FK, capacity_kwh, soc_percent, min_soc_percent, max_soc_percent, max_charge_power_kw, max_discharge_power_kw, charge_efficiency, discharge_efficiency, status, **version**). (PLAN 9 Battery)
-- [ ] **C3.2** `battery/model/Battery.java` cu `@Version` (optimistic locking — race tick vs comandă). `battery/repository/BatteryRepository.java` (`findByHouseId`).
-- [ ] **C3.3** DTO-uri `battery/dtos/`: `BatteryResponse`, `BatteryConfigurationRequest` (PATCH config).
-- [ ] **C3.4** `battery/controller/BatteryController.java`:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/houses/{houseId}/battery` | ADMIN sau owner |
-  | PATCH | `/api/v1/houses/{houseId}/battery/configuration` | `hasRole('ADMIN')` |
-
-- [ ] **C3.5** Verify: GET battery întoarce SoC + limite; PATCH config schimbă `maxChargePowerKw`.
-
-> Endpoint-ul de **comenzi** baterie (`POST .../battery/commands`) vine în EPIC E, după ce există validatorul fizic.
+### Teste (layout online-school)
+```
+.../<domeniu>Test/        XCommandServiceImplTest, XQueryServiceImplTest   (unit, Mockito)
+.../controllerTest/        xControllerTest                                  (MockMvc standalone)
+.../integration/...        XControllerTests                                 (Testcontainers MySQL)
+```
 
 ---
 
-# EPIC D — Lifecycle simulare + telemetrie
+## Harta EPIC-urilor
 
-**Goal:** ceas virtual + tick central reproductibil care generează PV/consum și persistă telemetrie. (PLAN 6.3)
+| EPIC | Funcționalitate | Stories | Dep | PLAN |
+|---|---|---|---|---|
+| 00 | Fundație | S1–S3 | — | 1 |
+| 01 | Autentificare & permisiuni | S1–S3 | 00 | 2 |
+| 02 | Adminul gestionează case | S1–S3 | 01 | 2 |
+| 03 | Configurarea bateriilor | S1–S2 | 02 | 2 |
+| 04 | Simularea produce telemetrie | S1–S4 | 03 | 3 |
+| 05 | Bilanț energetic & SoC | S1–S3 | 04 | 4 |
+| 06 | Comenzi manuale de baterie | S1 | 05 | 4 |
+| 07 | Prețul energiei (piață) | S1–S2 | 04 | 4 |
+| 08 | Protecția transformatorului | S1–S3 | 05,07 | 5 |
+| 09 | Contabilitate financiară | S1–S2 | 05,07 | 4 |
+| 10 | 📘 Agent: runs & audit (ADVISORY) | S1–S3 | 05,08 | 6 |
+| 11 | 📘 Agent: plan validat | S1–S3 | 10 | 6-7 |
+| 12 | Audit & rapoarte | S1 | toate | 10 |
+| 13 | Dashboard live (WebSocket) | S1 | 04,08,10 | 9 |
+| 14 | 📘 Rulare în Docker Compose | S1–S2 | 01+ | 1/10 |
 
-## Story D1 — Telemetry entity & queries
-
-- [ ] **D1.1** `V4__telemetry.sql`: `telemetry` (id, house_id, recorded_at, simulation_time, pv_power_kw, load_power_kw, battery_power_kw, net_power_kw, soc_percent, market_price) + **index `(house_id, recorded_at)`**. (PLAN 9 Telemetry)
-- [ ] **D1.2** `telemetry/model` + `telemetry/repository` (`findByHouseIdOrderByRecordedAtDesc`, paginat).
-- [ ] **D1.3** DTO `telemetry/dtos/TelemetryResponse` + `house/dtos/HouseTelemetryPageResponse` (paginare).
-
-## Story D2 — Generatoare PV & consum
-
-**Acceptance:** funcții deterministe (seed) — același seed ⇒ aceleași valori.
-
-- [ ] **D2.1** `simulation/service/` — `PvGenerator` și `LoadGenerator`, semnătură `double powerKw(House house, SimulationTime t, long seed)`.
-- [ ] **D2.2** Teste unitare: aceeași intrare + seed ⇒ output identic (reproductibilitate).
-
-## Story D3 — Tick central + lifecycle
-
-**Acceptance:** un singur tick actualizează toate casele; start/pause/resume/stop.
-
-- [ ] **D3.1** `simulation/service/SimulationClock.java` — timp virtual avansat cu `tickSeconds`.
-- [ ] **D3.2** `simulation/service/SimulationEngine.java` — `tick()`: pentru fiecare casă generează PV+consum, calculează `netPower` (provizoriu, fără baterie încă), persistă telemetrie. **Un singur tick central**, nu 10 fire.
-- [ ] **D3.3** Status machine: `STOPPED → RUNNING → PAUSED`. `simulation/controller/SimulationController.java`:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/simulation/status` | authenticated |
-  | POST | `/api/v1/simulation/start` `/pause` `/resume` `/stop` `/reset` | `hasRole('ADMIN')` |
-  | PATCH | `/api/v1/simulation/configuration` | `hasRole('ADMIN')` |
-
-- [ ] **D3.4** Telemetrie + stare:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/houses/{id}/telemetry` | ADMIN sau owner |
-  | GET | `/api/v1/community/telemetry` | `hasRole('ADMIN')` |
-  | GET | `/api/v1/community/state` | `hasRole('ADMIN')` |
-
-- [ ] **D3.5** Verify: `start` → după câteva tick-uri, `GET /houses/{id}/telemetry` întoarce rânduri; `reset` golește/reia cu același seed.
+Oprește-te la **EPIC 11** în mod **ADVISORY** pentru licență. *Modelul propune, codul determinist dispune.*
 
 ---
 
-# EPIC E — Energie, baterii (dispatch) & piață
+# EPIC 00 — Fundație
 
-**Goal:** bilanțul energetic, actualizarea SoC cu limite fizice, simulatorul de preț, comenzile manuale de baterie validate. **Inima deterministă** (PLAN 7).
+### `[F00-S1]` Erori unitare cu `ApiErrorResponse`
+**Prioritate:** High · **Points:** 3 · **Dep:** —
 
-## Story E1 — Energy engine
+**Ca** dezvoltator, **vreau** un format de eroare unic pe toată aplicația, **ca să** clientul primească mereu același JSON și să nu scape stack trace-uri.
 
-**Acceptance:** `Pnet = Ppv - Pload + Pbatt` cu convenția de semn din PLAN 7.1; bilanțul se închide în toleranță.
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: excepție de business
+  Given un endpoint care aruncă o *NotFoundException
+  When clientul îl apelează
+  Then primește 404 cu ApiErrorResponse (timestamp, status, error, message, path)
 
-- [ ] **E1.1** `energy/service/EnergyEngine.java` — `EnergyResult compute(houseState, batteryCommand, deltaHours)`: import/export, energie pe tick.
-- [ ] **E1.2** Teste unitare (PLAN 15.1): bilanț energetic, conversie putere→energie, semn corect export/import.
+Scenario: validare eșuată
+  Given un body invalid (@Valid pică)
+  When POST pe acel endpoint
+  Then 422 cu error="VALIDATION_ERROR" și câmpurile invalide
 
-## Story E2 — Battery SoC update + constrângeri
+Scenario: eroare neașteptată
+  Given o excepție necontrolată
+  Then 500 fără stack trace în body
+```
+**Tasks:**
+- [ ] `system/exceptions/ApiErrorResponse` (record `@Builder`)
+- [ ] `system/constants/ErrorConstants` (mesaje `static final String`, EN)
+- [ ] `system/exceptions/GlobalExceptionsHandler` (`@RestControllerAdvice`, grupat pe status)
+- [ ] controller dummy + test care verifică cele 3 scenarii
 
-**Acceptance:** formulele de SoC (PLAN 7.2) pe ambele ramuri; SoC niciodată în afara `[minSoC, maxSoC]`.
+**DoD:** compile verde · texte EN · fără stack trace în body.
 
-- [ ] **E2.1** `battery/service/BatteryService.java` — `applyCommand`: încărcare/descărcare cu randament, limitare putere, clamp SoC.
-- [ ] **E2.2** Teste unitare: charge, discharge, comandă peste `maxChargePowerKw` respinsă, descărcare care ar coborî sub `minSoC` respinsă, randamente. (PLAN 15.1)
+### `[F00-S2]` OpenAPI / Swagger cu Bearer
+**Prioritate:** Med · **Points:** 1 · **Dep:** F00-S1
 
-## Story E3 — Validator de comandă (determinist)
+**Ca** dezvoltator/comisie, **vreau** documentația API live, **ca să** explorez endpoint-urile și să testez cu token.
 
-**Acceptance:** orice comandă (manuală sau de agent) trece prin ACELAȘI validator înainte de aplicare.
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: Swagger accesibil
+  When deschid /swagger-ui.html
+  Then se încarcă cu titlul "SolarSyncBroker API" și schema bearerAuth
+```
+**Tasks:**
+- [ ] `system/config/OpenApiConfig` (`@Bean OpenAPI`, security scheme `bearerAuth`)
 
-- [ ] **E3.1** `battery/service/BatteryCommandValidator.java` — verifică putere ≤ limite, fezabilitate SoC pe durata tick-ului, returnează motiv structurat la respingere.
-- [ ] **E3.2** `battery/exceptions/BatterySocLimitException`, `BatteryPowerLimitException` (422, `errorCode` ca în PLAN 10).
+**DoD:** Swagger se încarcă · butonul Authorize există.
 
-## Story E4 — Comenzi manuale de baterie
+### `[F00-S3]` Config tipizată, auditing & clock
+**Prioritate:** High · **Points:** 2 · **Dep:** F00-S1
 
-- [ ] **E4.1** DTO `BatteryCommandRequest` (action CHARGE/DISCHARGE/IDLE, powerKw, durationSeconds), `CommandExecutionResponse`.
-- [ ] **E4.2** `V5__command_execution.sql` + `agent/model/CommandExecution.java` (PLAN 9) — reutilizat și de agent.
-- [ ] **E4.3** Endpoint:
+**Ca** dezvoltator, **vreau** parametrii fizici tipizați și timpul injectabil, **ca să** evit valori magice și să fac testele deterministe.
 
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/houses/{houseId}/battery/commands` | ADMIN/OPERATOR |
-  | POST | `/api/v1/houses/{houseId}/battery/commands` | `hasAnyRole('ADMIN','OPERATOR')` |
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: properties încărcate
+  Given application.yml cu solarsync.simulation.* / grid.* / agent.*
+  When pornește aplicația
+  Then SimulationProperties, GridProperties, AgentProperties sunt injectabile
 
-  Comanda trece prin `BatteryCommandValidator` → aplicată → persistată ca `CommandExecution`.
-- [ ] **E4.4** Verify: comandă validă → 201 + SoC actualizat; comandă peste limită → 422 cu `errorCode`.
+Scenario: timp controlabil în test
+  Given un Clock.fixed injectat
+  Then logica datează evenimente cu timpul fix
+```
+**Tasks:**
+- [ ] `@EnableJpaAuditing` + `AbstractAuditable` (`@CreatedDate Instant createdAt`)
+- [ ] `SimulationProperties` (`seed`, `tickSeconds`, `realToVirtualRatio`)
+- [ ] `GridProperties` (`transformerNominalKw`, `safetyMarginPercent`)
+- [ ] `AgentProperties` (`mode` default `ADVISORY`, `planningIntervalSeconds`)
+- [ ] `ClockConfig` (`@Bean Clock`) — nicăieri `Instant.now()` direct
+- [ ] chei în `application.yml` (fără secrete)
 
-## Story E5 — Market simulator
-
-**Acceptance:** preț pe intervale virtuale, cu istoric. (PLAN 6.4)
-
-- [ ] **E5.1** `V6__market_price.sql` + `market/model/MarketPrice.java` (id, valid_from, valid_until, price_per_kwh, source, scenario).
-- [ ] **E5.2** `market/service/MarketSimulator.java` — preț pentru intervalul curent; scenarii (preț mic/negativ/ridicat).
-- [ ] **E5.3** Endpoint:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/market/current-price` | authenticated |
-  | GET | `/api/v1/market/prices` | authenticated (paginat) |
-  | POST | `/api/v1/market/scenarios` | `hasRole('ADMIN')` |
-
-- [ ] **E5.4** Integrează prețul în tick (telemetria primește `market_price`).
-
----
-
-# EPIC F — Protecția transformatorului (grid)
-
-**Goal:** agregă fluxurile, detectează suprasarcina, aplică curtailment determinist. **Prioritate față de agent**, nu poate fi dezactivat de el. (PLAN 6.7)
-
-## Story F1 — Grid snapshot & detecție
-
-- [ ] **F1.1** `V7__grid.sql`: `grid_snapshot` (recorded_at, total_import_kw, total_export_kw, transformer_load_kw, operational_limit_kw, status) + `grid_alert` (type, severity, message, created_at, resolved_at, related_house_id, related_plan_id). (PLAN 9)
-- [ ] **F1.2** `grid/service/GridProtectionService.java` — `operationalLimit = nominal * (1 - safetyMargin)` din `GridProperties`; detectează depășire la import și export.
-
-## Story F2 — Curtailment determinist
-
-**Acceptance:** scenariul din PLAN 15.4 — 60 kW export cerut, limită 45 kW ⇒ rezultat ≤ 45.
-
-- [ ] **F2.1** Strategie de reducere **proporțională** a comenzilor caselor care contribuie la depășire.
-- [ ] **F2.2** Test unitar dedicat (curtailment 60→45). Alertă creată + auditată.
-- [ ] **F2.3** Integrează în tick: după calculul comenzilor, grid protection rulează ÎNAINTE de aplicare.
-
-## Story F3 — Grid endpoints
-
-- [ ] **F3.1**:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/grid/state` | authenticated |
-  | GET | `/api/v1/grid/alerts` | ADMIN/OPERATOR |
-  | GET | `/api/v1/grid/alerts/{id}` | ADMIN/OPERATOR |
+**DoD:** compile verde · valori implicite prezente.
 
 ---
 
-# EPIC G — Contabilitate financiară
+# EPIC 01 — Autentificare & permisiuni
 
-**Goal:** cost/venit/profit per casă și comunitate. (PLAN 6.8)
+### `[F01-S1]` User, UserType & permisiuni (DB + model)
+**Prioritate:** High · **Points:** 3 · **Dep:** F00-S3
 
-## Story G1 — FinancialTransaction
+**Ca** sistem, **vreau** utilizatori cu tip și set de permisiuni, **ca să** pot autoriza pe `hasAuthority`.
 
-- [ ] **G1.1** `V8__financial.sql` + `financial/model/FinancialTransaction.java` (house_id, recorded_at, type BUY/SELL, energy_kwh, unit_price, amount — `BigDecimal`).
-- [ ] **G1.2** `financial/service/` — la fiecare tick: import ⇒ BUY, export ⇒ SELL, cu prețul curent.
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: schema creată
+  When pornește Flyway
+  Then există tabelele users și user_permissions, iar ddl-auto:validate trece
 
-## Story G2 — Summaries
+Scenario: authorities din permisiuni
+  Given un User cu permisiunile [HOUSE_VIEW, MARKET_VIEW]
+  Then getAuthorities() le întoarce ca SimpleGrantedAuthority
+```
+**Tasks:**
+- [ ] `V1__users.sql`: `users` + `user_permissions`
+- [ ] `users/model/User implements UserDetails`, `UserType` (ADMIN/OPERATOR/USER/AGENT)
+- [ ] `users/security/UserPermissions` (enum din matrice)
+- [ ] `users/repository/UserRepository` (`findByEmail`, `existsByEmail`)
 
-- [ ] **G2.1**:
+**DoD:** Flyway aplică V1 · validate trece.
 
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/houses/{id}/financial-summary` | ADMIN sau owner |
-  | GET | `/api/v1/community/financial-summary` | `hasRole('ADMIN')` |
+### `[F01-S2]` Security config + emitere/validare JWT
+**Prioritate:** High · **Points:** 5 · **Dep:** F01-S1
 
-- [ ] **G2.2** Test: scenariul „preț ridicat seara" (PLAN 15.4) — profit calculat corect.
+**Ca** sistem, **vreau** API stateless securizat cu JWT, **ca să** doar cererile autentificate ajungă la business.
 
----
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: rută protejată fără token
+  When GET /api/v1/houses fără Authorization
+  Then 401 cu ApiErrorResponse
 
-# EPIC H — Agent: status & runs (ADVISORY)
+Scenario: rute publice
+  When POST /api/v1/auth/login
+  Then nu cere token (permitAll)
 
-**Goal:** scheletul agentului autonom + auditul, **fără** apel LLM încă (mock). (PLAN 8, RECAP Modul 8-9)
+Scenario: permisiune lipsă
+  Given token valid fără HOUSE_MANAGE
+  When POST /api/v1/houses
+  Then 403 cu ApiErrorResponse
+```
+**Tasks:**
+- [ ] `SecurityConstants` (`AUTHORITIES`, `ISSUER`, `AUDIENCE`, `PUBLIC_URLS`)
+- [ ] `users/jwt/JWTTokenProvider` (HS512, claim `authorities`, cheia din env)
+- [ ] `users/service/UserDetailService(+Impl)`
+- [ ] `SecurityConfiguration` (stateless, `@EnableMethodSecurity`, `BCrypt`, `DaoAuthenticationProvider`, `oauth2ResourceServer().jwt`, `publicAwareBearerTokenResolver`)
+- [ ] `JwtAuthenticationEntryPoint` (401) + `SecurityAccessDeniedHandler` (403) → `ApiErrorResponse`
 
-## Story H1 — Entități audit agent
+**DoD:** 401/403 ies ca `ApiErrorResponse` · rute publice merg fără token.
 
-- [ ] **H1.1** `V9__agent.sql`: `agent_run` (trigger_type, mode, provider, model, status, started_at, finished_at, failure_reason, token_usage, estimated_cost), `agent_plan` (agent_run_id, status, objective, plan_json, expected_profit, expected_transformer_peak_kw, confidence, approved_by, approved_at), `agent_tool_call` (agent_run_id, tool_name, arguments_json, result_json, status, started_at, finished_at). (PLAN 9)
-- [ ] **H1.2** `agent/model/` + `agent/repository/` pentru cele 3 entități.
+### `[F01-S3]` Register / Login / Me
+**Prioritate:** High · **Points:** 3 · **Dep:** F01-S2
 
-## Story H2 — Model gateway (abstracție LLM)
+**Ca** utilizator, **vreau** să mă înregistrez și să mă loghez, **ca să** primesc un token și să-mi văd profilul.
 
-**Acceptance:** tot codul Spring AI izolat într-un singur loc; în teste un gateway fals, fără rețea.
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: înregistrare
+  When POST /auth/register cu email nou
+  Then 201, parola e hash-uită, primesc permisiunile UserType-ului
 
-- [ ] **H2.1** `agent/service/AgentModelGateway.java` (interfață) — `DispatchPlan proposePlan(AgentContext ctx)`.
-- [ ] **H2.2** Implementare `mock` (returnează un plan determinist) — folosită până la Modul 8 și în teste. **Adaugă dependența Spring AI reală abia când integrezi providerul** (vezi RECAP Modul 8: BOM e deja pin-uit).
-- [ ] **H2.3** Provider real (OpenAI) — `AI_PROVIDER`, chei din env. (poate fi un Story separat la Modul 8)
+Scenario: email duplicat
+  Given email deja folosit
+  When POST /auth/register
+  Then 409 UserAlreadyExistsException
 
-## Story H3 — Agent status & runs endpoints
+Scenario: login + me
+  Given user existent
+  When POST /auth/login apoi GET /auth/me cu Bearer
+  Then login→200+token, me→200 cu datele mele
+```
+**Tasks:**
+- [ ] DTO `auth/dtos/`: `AuthRegisterRequest`, `AuthLoginRequest`, `AuthLoginResponse`
+- [ ] `auth/service/AuthService(+Impl)`: `register` (set permisiuni după tip), `login` (`AuthenticationManager`)
+- [ ] `auth/exceptions/AuthValidationException`; `users/exceptions/User*Exception`
+- [ ] `auth/controller/AuthController` (register/login/me/logout)
+- [ ] test integrare: register→login→me; 401 fără token
 
-- [ ] **H3.1**:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/agent/status` | ADMIN/OPERATOR |
-  | GET | `/api/v1/agent/runs` | ADMIN/OPERATOR |
-  | GET | `/api/v1/agent/runs/{id}` | ADMIN/OPERATOR |
-  | PATCH | `/api/v1/agent/configuration` | `hasRole('ADMIN')` (mode, interval) |
-  | POST | `/api/v1/agent/run` | ADMIN/OPERATOR (trigger manual) |
-
-- [ ] **H3.2** Un `agent/run` pornit creează un `AgentRun` cu status, persistă fiecare `AgentToolCall`.
-
----
-
-# EPIC I — Planuri: simulare, validare, aprobare, execuție
-
-**Goal:** ciclul `OBSERVE → PLAN → SIMULATE → VALIDATE` (ACT abia la SUPERVISED). (PLAN 8.3)
-
-## Story I1 — DispatchPlan + structured output
-
-- [ ] **I1.1** `agent/dtos/DispatchPlan` + `BatteryCommand` exact ca PLAN 8.9 (planId, validFrom/Until, objective, commands[], expected*, assumptions[], confidence). Bean Validation pe câmpuri.
-- [ ] **I1.2** Validare: răspuns invalid de la model ⇒ plan **respins**, nu excepție necontrolată (PLAN 8.10).
-
-## Story I2 — Simulate & validate (dry-run)
-
-**Acceptance:** planul e simulat fără efecte și validat determinist înainte de a fi marcat acceptabil.
-
-- [ ] **I2.1** `agent/service/` — `simulateDispatchPlan(plan)` (rulează prin EnergyEngine + GridProtection, fără persistare reală).
-- [ ] **I2.2** `validateDispatchPlan(plan)` — fiecare comandă prin `BatteryCommandValidator` + check transformator. Plan malițios (peste limite) ⇒ respins + auditat (PLAN 15.4).
-
-## Story I3 — Plans endpoints (aprobare/execuție)
-
-- [ ] **I3.1**:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/agent/plans` `/{id}` `/{id}/tool-calls` | ADMIN/OPERATOR |
-  | POST | `/api/v1/agent/plans/{id}/approve` `/reject` | `hasRole('OPERATOR')` |
-  | POST | `/api/v1/agent/plans/{id}/execute` | `hasRole('OPERATOR')` (SUPERVISED) |
-  | POST | `/api/v1/agent/emergency-stop` | `hasAnyRole('ADMIN','OPERATOR')` |
-
-- [ ] **I3.2** În ADVISORY: `execute` întoarce 409/`AGENT_MODE_ADVISORY` (nu execută). Comutarea pe SUPERVISED activează execuția prin același validator + `CommandExecution`.
-- [ ] **I3.3** Verify (scenariile PLAN 15.4): preț mic la prânz ⇒ plan de încărcare valid; plan invalid ⇒ respins; provider indisponibil ⇒ simularea continuă, niciun plan nou (degradare sigură).
-
----
-
-# EPIC J — Audit & rapoarte
-
-- [ ] **J1.1** `audit/` (sub `system` sau domeniu propriu) — endpoint citire evenimente:
-
-  | Method | Path | Permission |
-  |---|---|---|
-  | GET | `/api/v1/audit/events` | `hasRole('ADMIN')` |
-  | GET | `/api/v1/reports/energy` | ADMIN/OPERATOR |
-  | GET | `/api/v1/reports/financial` | ADMIN/OPERATOR |
-  | GET | `/api/v1/reports/agent-performance` | ADMIN/OPERATOR |
-
-- [ ] **J1.2** Rapoartele agregă pe intervale (import/export, profit, planuri acceptate/respinse, token usage).
+**DoD:** flux complet verde · permisiuni corecte per tip.
 
 ---
 
-# EPIC K — WebSocket (dashboard)
+# EPIC 02 — Adminul gestionează case
 
-**Goal:** evenimente live pentru dashboard. **Niciodată comenzi critice** pe WebSocket. (PLAN 12)
+### `[F02-S1]` Crearea unei case
+**Prioritate:** High · **Points:** 3 · **Dep:** F01-S3
 
-- [ ] **K1.1** `system/config/WebSocketConfig.java` — STOMP, endpoint `/ws`, broker `/topic`.
-- [ ] **K1.2** Publică din tick / din servicii (via `SimpMessagingTemplate`) — DTO-uri, nu entități:
-  `/topic/community/state`, `/topic/houses/{id}/state`, `/topic/grid/alerts`, `/topic/market/price`, `/topic/agent/status`, `/topic/agent/plans`, `/topic/agent/executions`.
-- [ ] **K1.3** Verify: un client STOMP primește `CommunityStateUpdated` la fiecare tick. Oprește WebSocket ⇒ protecția și comenzile rulează în continuare.
+**Ca** ADMIN, **vreau** să creez o casă cu parametrii fizici, **ca să** intre în simulare.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: creare validă
+  Given autentificat cu HOUSE_MANAGE
+  When POST /api/v1/houses cu puteri > 0
+  Then 201 și casa apare în GET /api/v1/houses
+
+Scenario: fără permisiune
+  Given autentificat fără HOUSE_MANAGE
+  When POST /api/v1/houses
+  Then 403 ApiErrorResponse
+
+Scenario: putere invalidă
+  When POST cu pv_peak_power_kw <= 0
+  Then 422 VALIDATION_ERROR
+```
+**Tasks:**
+- [ ] `V2__houses.sql`
+- [ ] `house/model/House` + `HouseRepository` (`existsByName`, `findByOwnerId`, `findByIdAndOwnerId`)
+- [ ] DTO `HouseRequest` (`@Positive`), `HouseResponse` + `HouseMapper` static
+- [ ] `HouseCommandServiceImpl.createHouse`
+- [ ] `POST /houses` `@PreAuthorize('HOUSE_MANAGE')`
+- [ ] test 201 + 403 + 422
+
+**DoD:** Flyway V2 · DoD global.
+
+### `[F02-S2]` Vizualizare cu izolare pe owner
+**Prioritate:** High · **Points:** 3 · **Dep:** F02-S1
+
+**Ca** USER, **vreau** să-mi văd doar casa mea; **ca** ADMIN, toate, **ca să** datele altcuiva rămână private.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: admin vede tot
+  Given ADMIN
+  When GET /api/v1/houses
+  Then 200 cu toate casele
+
+Scenario: owner vede casa lui
+  Given USER owner al casei {id}
+  When GET /api/v1/houses/{id}
+  Then 200
+
+Scenario: user pe casa altuia
+  Given USER care nu deține {altId}
+  When GET /api/v1/houses/{altId}
+  Then 403 HouseAccessDeniedException
+```
+**Tasks:**
+- [ ] DTO `HouseStateResponse`
+- [ ] `HouseQueryService`: `getAllHouses()`, `getHouseForCaller(id, caller)` (owner check **în service**)
+- [ ] `GET /houses`, `/houses/{id}`, `/houses/{id}/state` `@PreAuthorize('HOUSE_VIEW')`
+- [ ] `HouseNotFoundException` (404), `HouseAccessDeniedException` (403)
+- [ ] test: 2 useri, owner 200 / străin 403
+
+**DoD:** owner check verificat prin test.
+
+### `[F02-S3]` Update / Patch / Delete
+**Prioritate:** Med · **Points:** 2 · **Dep:** F02-S1
+
+**Ca** ADMIN, **vreau** să modific sau să șterg o casă, **ca să** întrețin comunitatea.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: patch parțial
+  Given casa {id}
+  When PATCH /houses/{id} cu un singur câmp
+  Then 200, doar câmpul trimis se schimbă
+
+Scenario: casă inexistentă
+  When PATCH /houses/{lipsă}
+  Then 404 HouseNotFoundException
+```
+**Tasks:**
+- [ ] DTO `HousePatchRequest` (record)
+- [ ] `HouseCommandService`: `updateHouse`, `patchHouse`, `deleteHouse`
+- [ ] `PATCH /houses/{id}` `@PreAuthorize('HOUSE_MANAGE')`
+- [ ] test patch + 404
+
+**DoD:** DoD global.
 
 ---
 
-## Definition of Done (pe FIECARE Story)
+# EPIC 03 — Configurarea bateriilor
+
+### `[F03-S1]` Bateria casei (entity + GET)
+**Prioritate:** High · **Points:** 3 · **Dep:** F02-S1
+
+**Ca** owner/ADMIN, **vreau** să văd bateria casei (SoC + limite), **ca să** știu starea ei.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: citire baterie
+  Given casa {id} cu baterie
+  When GET /api/v1/houses/{id}/battery cu BATTERY_VIEW
+  Then 200 cu SoC, limite, randamente
+
+Scenario: owner check
+  Given USER care nu deține casa
+  Then 403
+```
+**Tasks:**
+- [ ] `V3__batteries.sql` (cu `version`)
+- [ ] `battery/model/Battery` (`@Version`) + `BatteryRepository.findByHouseId`
+- [ ] DTO `BatteryResponse` + mapper static
+- [ ] `BatteryQueryService` (owner check)
+- [ ] `GET /houses/{houseId}/battery` `@PreAuthorize('BATTERY_VIEW')`
+- [ ] test GET + 403
+
+**DoD:** Flyway V3 · `@Version` prezent.
+
+### `[F03-S2]` Configurarea bateriei
+**Prioritate:** Med · **Points:** 2 · **Dep:** F03-S1
+
+**Ca** ADMIN, **vreau** să modific limitele bateriei, **ca să** ajustez comportamentul fizic.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: patch config
+  Given BATTERY_CONFIG
+  When PATCH /battery/configuration cu maxChargePowerKw nou
+  Then 200 și valoarea se schimbă
+
+Scenario: fără permisiune
+  Given doar BATTERY_VIEW
+  Then 403
+```
+**Tasks:**
+- [ ] DTO `BatteryConfigurationRequest`
+- [ ] `BatteryCommandService.updateConfiguration`
+- [ ] `PATCH /battery/configuration` `@PreAuthorize('BATTERY_CONFIG')`
+- [ ] test patch + 403
+
+**DoD:** DoD global.
+
+---
+
+# EPIC 04 — Simularea produce telemetrie
+
+### `[F04-S1]` Entitatea Telemetry + citire
+**Prioritate:** High · **Points:** 3 · **Dep:** F03-S1
+
+**Ca** owner/ADMIN, **vreau** istoricul de telemetrie, **ca să** urmăresc casa în timp.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: telemetrie paginată
+  Given telemetrie pentru casa {id}
+  When GET /houses/{id}/telemetry?page=0
+  Then 200 cu pagină ordonată desc după recorded_at
+```
+**Tasks:**
+- [ ] `V4__telemetry.sql` + index `(house_id, recorded_at)`
+- [ ] `telemetry/model` + repo (`findByHouseIdOrderByRecordedAtDesc`, paginat)
+- [ ] DTO `TelemetryResponse`, `HouseTelemetryPageResponse`
+
+**DoD:** index creat · Flyway V4.
+
+### `[F04-S2]` Generatoare PV & consum deterministe
+**Prioritate:** High · **Points:** 3 · **Dep:** F00-S3
+
+**Ca** sistem, **vreau** producție/consum reproductibile pe seed, **ca să** testele dea același rezultat.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: reproductibilitate
+  Given același seed, casă și timp
+  When apelez PvGenerator/LoadGenerator de 2 ori
+  Then primesc valori identice
+```
+**Tasks:**
+- [ ] `simulation/service/PvGenerator`, `LoadGenerator` — `powerKw(House, SimulationTime, long seed)`
+- [ ] unit test reproductibilitate
+
+**DoD:** test verde · fără randomness necontrolat.
+
+### `[F04-S3]` Tick central + lifecycle
+**Prioritate:** High · **Points:** 5 · **Dep:** F04-S1, F04-S2
+
+**Ca** ADMIN, **vreau** să pornesc/opresc simularea, **ca să** controlez comunitatea, cu **un singur tick** care actualizează toate casele.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: pornire produce date
+  Given SIMULATION_CONTROL
+  When POST /simulation/start și trec câteva tick-uri
+  Then telemetria caselor se populează
+
+Scenario: reset determinist
+  When POST /simulation/reset
+  Then simularea reia cu același seed
+
+Scenario: un singur tick
+  Then toate casele sunt actualizate de un tick central (nu 10 fire)
+```
+**Tasks:**
+- [ ] `SimulationClock` (timp virtual cu `tickSeconds`)
+- [ ] `SimulationEngine.tick()` (PV+consum, netPower provizoriu, persistă telemetrie)
+- [ ] state machine `STOPPED→RUNNING→PAUSED`
+- [ ] `SimulationController` start/pause/resume/stop/reset/config `@PreAuthorize('SIMULATION_CONTROL')`, status authenticated
+- [ ] test lifecycle + reset
+
+**DoD:** un tick central · reset reproductibil.
+
+### `[F04-S4]` Telemetrie & stare comunitate
+**Prioritate:** Med · **Points:** 2 · **Dep:** F04-S3
+
+**Ca** ADMIN/OPERATOR, **vreau** starea comunității, **ca să** văd ansamblul.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: community state
+  Given COMMUNITY_VIEW
+  When GET /community/state
+  Then 200 cu agregarea caselor
+```
+**Tasks:**
+- [ ] `GET /houses/{id}/telemetry` `@PreAuthorize('TELEMETRY_VIEW')` + owner check
+- [ ] `GET /community/telemetry`, `/community/state` `@PreAuthorize('COMMUNITY_VIEW')`
+- [ ] test
+
+**DoD:** DoD global.
+
+---
+
+# EPIC 05 — Bilanț energetic & SoC (inima deterministă)
+
+### `[F05-S1]` Energy engine
+**Prioritate:** High · **Points:** 5 · **Dep:** F04-S3
+
+**Ca** sistem, **vreau** bilanțul energetic corect, **ca să** importul/exportul și energia pe tick fie exacte (PLAN 7.1).
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: convenția de semn
+  Given Ppv, Pload, Pbatt
+  When compute(...)
+  Then Pnet = Ppv - Pload + Pbatt; Pnet>0 export, Pnet<0 import
+
+Scenario: bilanț închis
+  Then energia se conservă în toleranța numerică
+```
+**Tasks:**
+- [ ] `energy/service/EnergyEngine.compute(houseState, batteryCommand, deltaHours)`
+- [ ] unit: bilanț, conversie putere→energie, semn export/import
+
+**DoD:** teste verzi — **blocant** pentru EPIC-urile următoare.
+
+### `[F05-S2]` Actualizare SoC + constrângeri
+**Prioritate:** High · **Points:** 5 · **Dep:** F05-S1, F03-S1
+
+**Ca** sistem, **vreau** SoC actualizat cu randament și limitat fizic, **ca să** bateria nu iasă din `[minSoC, maxSoC]` (PLAN 7.2).
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: încărcare/descărcare
+  Then SoC se schimbă conform formulei, cu randamentul aplicat
+
+Scenario: clamp limite
+  Given comandă care ar trece de maxSoC sau sub minSoC
+  Then SoC e limitat / comanda respinsă
+```
+**Tasks:**
+- [ ] `battery/service/commandService/BatteryService.applyCommand`
+- [ ] unit: charge, discharge, peste `maxChargePowerKw` respinsă, sub `minSoC` respinsă, randamente
+
+**DoD:** SoC nu iese niciodată din limite (test).
+
+### `[F05-S3]` Validator determinist de comandă
+**Prioritate:** High · **Points:** 3 · **Dep:** F05-S2
+
+**Ca** sistem, **vreau** un singur validator pentru orice comandă (manuală sau de agent), **ca să** regulile fizice fie aplicate uniform.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: comandă peste putere
+  When validez o comandă cu powerKw > limită
+  Then respinsă cu motiv structurat (BATTERY_POWER_LIMIT)
+
+Scenario: comandă infezabilă SoC
+  Then respinsă (BATTERY_SOC_LIMIT)
+```
+**Tasks:**
+- [ ] `battery/service/BatteryCommandValidator`
+- [ ] `BatterySocLimitException`, `BatteryPowerLimitException` (422, mesaj din `ErrorConstants`)
+- [ ] unit pe ambele respingeri
+
+**DoD:** reutilizabil de F06 și F11.
+
+---
+
+# EPIC 06 — Comenzi manuale de baterie
+
+### `[F06-S1]` Trimitere comandă validată
+**Prioritate:** High · **Points:** 3 · **Dep:** F05-S3
+
+**Ca** ADMIN/OPERATOR, **vreau** să trimit o comandă de baterie, **ca să** intervin manual — prin **același** validator ca agentul.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: comandă validă
+  Given BATTERY_COMMAND
+  When POST /houses/{id}/battery/commands valid
+  Then 201, SoC actualizat, CommandExecution persistat
+
+Scenario: comandă peste limită
+  Then 422 cu ApiErrorResponse (errorCode)
+```
+**Tasks:**
+- [ ] `V5__command_execution.sql` + `agent/model/CommandExecution`
+- [ ] DTO `BatteryCommandRequest`, `CommandExecutionResponse`
+- [ ] `GET`/`POST /houses/{id}/battery/commands` `@PreAuthorize('BATTERY_COMMAND')`
+- [ ] test 201 + 422
+
+**DoD:** trece prin `BatteryCommandValidator`.
+
+---
+
+# EPIC 07 — Prețul energiei (piață)
+
+### `[F07-S1]` MarketPrice + simulator
+**Prioritate:** High · **Points:** 3 · **Dep:** F00-S3
+
+**Ca** sistem, **vreau** preț pe intervale virtuale cu scenarii, **ca să** simulez piața (mic/negativ/ridicat).
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: preț curent
+  When cer prețul intervalului virtual curent
+  Then primesc o valoare conform scenariului activ
+```
+**Tasks:**
+- [ ] `V6__market_price.sql` + `market/model/MarketPrice`
+- [ ] `market/service/MarketSimulator`
+- [ ] unit scenarii
+
+**DoD:** Flyway V6.
+
+### `[F07-S2]` Endpoints piață + integrare în tick
+**Prioritate:** Med · **Points:** 2 · **Dep:** F07-S1, F04-S3
+
+**Ca** utilizator, **vreau** prețul și istoricul; **ca** sistem, prețul intră în telemetrie.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: istoric paginat
+  When GET /market/prices cu MARKET_VIEW
+  Then 200 paginat
+
+Scenario: scenariu nou
+  Given MARKET_MANAGE
+  When POST /market/scenarios
+  Then se schimbă scenariul; USER fără permisiune → 403
+
+Scenario: preț în telemetrie
+  Then fiecare tick scrie market_price în telemetry
+```
+**Tasks:**
+- [ ] `GET /market/current-price`, `/market/prices` `@PreAuthorize('MARKET_VIEW')`
+- [ ] `POST /market/scenarios` `@PreAuthorize('MARKET_MANAGE')`
+- [ ] integrare în `tick()`
+- [ ] test
+
+**DoD:** telemetria primește prețul.
+
+---
+
+# EPIC 08 — Protecția transformatorului
+
+### `[F08-S1]` Snapshot grid + detecție suprasarcină
+**Prioritate:** High · **Points:** 3 · **Dep:** F05-S1
+
+**Ca** sistem, **vreau** să detectez depășirea limitei transformatorului, **ca să** protejez infrastructura.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: limita operațională
+  Given nominal=50kW, safetyMargin=10%
+  Then operationalLimit=45kW
+
+Scenario: detecție depășire
+  Given flux total > operationalLimit
+  Then se semnalează suprasarcină (import sau export)
+```
+**Tasks:**
+- [ ] `V7__grid.sql` (`grid_snapshot`, `grid_alert`)
+- [ ] `grid/service/GridProtectionService` (limită + detecție)
+- [ ] unit detecție
+
+**DoD:** Flyway V7.
+
+### `[F08-S2]` Curtailment determinist
+**Prioritate:** High · **Points:** 5 · **Dep:** F08-S1
+
+**Ca** sistem, **vreau** reducere proporțională la suprasarcină, **ca să** fluxul scadă sub limită — cu **prioritate față de agent**.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: 60kW export, limită 45kW
+  When grid protection rulează înainte de aplicarea comenzilor
+  Then exportul final ≤ 45kW (reducere proporțională)
+  And se creează o alertă auditată
+```
+**Tasks:**
+- [ ] curtailment proporțional în `GridProtectionService`
+- [ ] integrare în `tick()` **înainte** de aplicare
+- [ ] unit dedicat 60→45 + alertă
+
+**DoD:** scenariul PLAN 15.4 verde.
+
+### `[F08-S3]` Endpoints grid
+**Prioritate:** Med · **Points:** 2 · **Dep:** F08-S1
+
+**Ca** ADMIN/OPERATOR, **vreau** starea și alertele grid-ului, **ca să** monitorizez.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: listă alerte
+  When GET /grid/alerts cu GRID_VIEW
+  Then 200
+```
+**Tasks:**
+- [ ] `GET /grid/state`, `/grid/alerts`, `/grid/alerts/{id}` `@PreAuthorize('GRID_VIEW')`
+- [ ] test
+
+**DoD:** DoD global.
+
+---
+
+# EPIC 09 — Contabilitate financiară
+
+### `[F09-S1]` FinancialTransaction la fiecare tick
+**Prioritate:** High · **Points:** 3 · **Dep:** F05-S1, F07-S1
+
+**Ca** sistem, **vreau** să înregistrez BUY/SELL la fiecare tick, **ca să** pot calcula profitul.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: import = BUY, export = SELL
+  Given un tick cu import și prețul curent
+  Then se creează o tranzacție BUY cu amount = energy_kwh * unit_price (BigDecimal)
+```
+**Tasks:**
+- [ ] `V8__financial.sql` + `financial/model/FinancialTransaction` (`BigDecimal`)
+- [ ] generare în `tick()`
+- [ ] unit calcul
+
+**DoD:** bani cu `BigDecimal`.
+
+### `[F09-S2]` Sumarele financiare
+**Prioritate:** Med · **Points:** 2 · **Dep:** F09-S1
+
+**Ca** owner/ADMIN, **vreau** cost/venit/profit, **ca să** evaluez casa și comunitatea.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: profit seara
+  Given scenariul "preț ridicat seara" (PLAN 15.4)
+  Then profitul calculat e corect
+
+Scenario: izolare
+  Given USER
+  When GET /houses/{altId}/financial-summary
+  Then 403
+```
+**Tasks:**
+- [ ] `GET /houses/{id}/financial-summary` `@PreAuthorize('FINANCIAL_VIEW')` + owner check
+- [ ] `GET /community/financial-summary` `@PreAuthorize('COMMUNITY_VIEW')`
+- [ ] test profit + izolare
+
+**DoD:** scenariul PLAN 15.4 verde.
+
+---
+
+# EPIC 10 — 📘 Agent: runs & audit (ADVISORY)
+
+> **📘 înveți aici — Spring AI, pasul 1.** Abstractizezi LLM-ul după `AgentModelGateway`. Mock determinist în teste, fără rețea/cheie. Codul Spring AI real apare la Modul 8, izolat. **Agentul nu e chatbot.**
+
+### `[F10-S1]` Entități de audit ale agentului
+**Prioritate:** High · **Points:** 3 · **Dep:** F05-S2
+
+**Ca** sistem, **vreau** să persist run-urile, planurile și tool-call-urile, **ca să** fiecare decizie a agentului fie auditabilă.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: schema agent
+  When Flyway aplică V9
+  Then există agent_run, agent_plan, agent_tool_call
+```
+**Tasks:**
+- [ ] `V9__agent.sql` (3 tabele, câmpuri din PLAN 9)
+- [ ] `agent/model/` + `agent/repository/`
+
+**DoD:** Flyway V9 · validate trece.
+
+### `[F10-S2]` Gateway LLM (abstracție + mock)
+**Prioritate:** High · **Points:** 3 · **Dep:** F10-S1
+
+**Ca** dezvoltator, **vreau** o singură interfață spre model, **ca să** testez agentul fără LLM real.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: mock determinist
+  Given AgentModelGateway mock
+  When proposePlan(ctx)
+  Then întoarce un DispatchPlan fix, fără apel de rețea
+```
+**Tasks:**
+- [ ] `agent/service/AgentModelGateway` (interfață) — `DispatchPlan proposePlan(AgentContext)`
+- [ ] implementare mock
+- [ ] note Modul 8: provider OpenAI, `AI_PROVIDER` + cheie din env, aceeași interfață
+
+**DoD:** zero dependență de rețea în teste.
+
+### `[F10-S3]` Status, runs & trigger manual
+**Prioritate:** Med · **Points:** 3 · **Dep:** F10-S2
+
+**Ca** ADMIN/OPERATOR, **vreau** să declanșez și să inspectez run-uri, **ca să** văd ce face agentul.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: trigger creează run
+  Given AGENT_OPERATE
+  When POST /agent/run
+  Then se creează AgentRun și se persistă AgentToolCall-urile
+
+Scenario: config doar admin
+  Given OPERATOR (fără AGENT_CONFIG)
+  When PATCH /agent/configuration
+  Then 403
+```
+**Tasks:**
+- [ ] `GET /agent/status`, `/agent/runs`, `/runs/{id}` `@PreAuthorize('AGENT_VIEW')`
+- [ ] `PATCH /agent/configuration` `@PreAuthorize('AGENT_CONFIG')`
+- [ ] `POST /agent/run` `@PreAuthorize('AGENT_OPERATE')`
+- [ ] test trigger + audit
+
+**DoD:** run-ul e auditat complet.
+
+---
+
+# EPIC 11 — 📘 Agent: plan validat (ADVISORY)
+
+> **📘 înveți aici — Spring AI, pasul 2.** Structured output (`DispatchPlan`, nu text). Orice plan trece prin **același `BatteryCommandValidator`** + check transformator. *Modelul propune, codul dispune.* Tool calling la Modul 8.
+
+### `[F11-S1]` DispatchPlan (structured output)
+**Prioritate:** High · **Points:** 3 · **Dep:** F10-S2
+
+**Ca** sistem, **vreau** un plan structurat și validabil, **ca să** nu execut text liber.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: plan valid ca structură
+  Given un DispatchPlan complet (PLAN 8.9)
+  Then trece Bean Validation
+
+Scenario: răspuns invalid de la model
+  Given JSON incomplet
+  Then planul e respins controlat (nu 500)
+```
+**Tasks:**
+- [ ] `agent/dtos/DispatchPlan` + `BatteryCommand` (Bean Validation)
+- [ ] respingere controlată pe răspuns invalid
+- [ ] unit
+
+**DoD:** invalid → respins, nu excepție.
+
+### `[F11-S2]` Simulate & validate (dry-run)
+**Prioritate:** High · **Points:** 5 · **Dep:** F11-S1, F05-S3, F08-S2
+
+**Ca** sistem, **vreau** să simulez și validez planul fără efecte, **ca să** prind planuri periculoase înainte de execuție.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: dry-run fără persistare
+  When simulateDispatchPlan(plan)
+  Then rulează prin EnergyEngine + GridProtection fără a scrie în DB
+
+Scenario: plan malițios
+  Given comandă peste limite
+  When validateDispatchPlan(plan)
+  Then respins + auditat
+```
+**Tasks:**
+- [ ] `agent/service/queryService/simulateDispatchPlan`
+- [ ] `validateDispatchPlan` (prin `BatteryCommandValidator` + transformator)
+- [ ] unit plan valid / malițios
+
+**DoD:** scenariile PLAN 15.4 verzi.
+
+### `[F11-S3]` Endpoints planuri (aprobare/execuție)
+**Prioritate:** High · **Points:** 3 · **Dep:** F11-S2
+
+**Ca** OPERATOR, **vreau** să aprob/resping planuri; în ADVISORY execuția e blocată, **ca să** păstrez controlul uman.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: execute în ADVISORY
+  Given mode=ADVISORY
+  When POST /agent/plans/{id}/execute
+  Then 409 AGENT_MODE_ADVISORY (nu execută)
+
+Scenario: provider indisponibil
+  Given LLM down
+  Then simularea continuă, niciun plan nou (degradare sigură)
+```
+**Tasks:**
+- [ ] `GET /agent/plans`, `/{id}`, `/{id}/tool-calls` `@PreAuthorize('AGENT_VIEW')`
+- [ ] `POST /plans/{id}/approve`, `/reject`, `/execute`, `/agent/emergency-stop` `@PreAuthorize('AGENT_OPERATE')`
+- [ ] 409 în ADVISORY; SUPERVISED → același validator + `CommandExecution`
+- [ ] test scenarii PLAN 15.4
+
+**DoD:** ADVISORY nu execută · degradare sigură.
+
+---
+
+# EPIC 12 — Audit & rapoarte
+
+### `[F12-S1]` Evenimente & rapoarte agregate
+**Prioritate:** Med · **Points:** 3 · **Dep:** toate
+
+**Ca** ADMIN/OPERATOR, **vreau** audit și rapoarte pe intervale, **ca să** evaluez sistemul și agentul.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: raport energie
+  When GET /reports/energy cu AUDIT_VIEW
+  Then 200 cu agregări pe interval (import/export, profit, planuri acc/resp, token usage)
+```
+**Tasks:**
+- [ ] `GET /audit/events`, `/reports/energy|financial|agent-performance` `@PreAuthorize('AUDIT_VIEW')`
+- [ ] agregări pe intervale
+
+**DoD:** DoD global.
+
+---
+
+# EPIC 13 — Dashboard live (WebSocket)
+
+### `[F13-S1]` Evenimente live STOMP
+**Prioritate:** Med · **Points:** 3 · **Dep:** F04-S3, F08-S2, F10-S3
+
+**Ca** frontend, **vreau** evenimente la fiecare tick, **ca să** afișez dashboard-ul live — **fără** comenzi critice pe WebSocket.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: stare live
+  Given client STOMP abonat la /topic/community/state
+  When trece un tick
+  Then primește CommunityStateUpdated
+
+Scenario: WebSocket cade
+  Given WebSocket oprit
+  Then protecția și comenzile rulează în continuare
+```
+**Tasks:**
+- [ ] `system/config/WebSocketConfig` (STOMP, `/ws`, broker `/topic`)
+- [ ] publicare din tick/servicii (`SimpMessagingTemplate`) — **DTO-uri, nu entități**
+- [ ] test client STOMP
+
+**DoD:** doar evenimente, nu comenzi critice.
+
+---
+
+# EPIC 14 — 📘 Rulare completă în Docker Compose
+
+> **📘 înveți aici — Docker.** Dockerfile multi-stage + compose full-stack. `depends_on`+`healthcheck`, env din `.env` (gitignored), host = numele serviciului (`jdbc:mysql://mysql:3306/solarsync`).
+
+### `[F14-S1]` Dockerfile multi-stage
+**Prioritate:** Med · **Points:** 2 · **Dep:** F01-S2
+
+**Ca** dezvoltator, **vreau** o imagine a backend-ului, **ca să** rulez aplicația în container.
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: build imagine
+  When docker build .
+  Then rezultă o imagine cu JRE slim care pornește jar-ul pe 8080
+```
+**Tasks:**
+- [ ] `Dockerfile` (build Maven → runtime `eclipse-temurin:21-jre`, `EXPOSE 8080`)
+- [ ] `.dockerignore`
+
+**DoD:** imaginea pornește local.
+
+### `[F14-S2]` Compose full-stack
+**Prioritate:** High · **Points:** 3 · **Dep:** F14-S1
+
+**Ca** comisie, **vreau** `docker compose up` să ridice tot, **ca să** demonstrez cu o singură comandă (criteriul #1 MVP).
+
+**Acceptance (Gherkin):**
+```gherkin
+Scenario: pornire completă
+  Given o mașină curată cu .env completat
+  When docker compose up --build
+  Then MySQL healthy, backend pornit după el, Flyway aplică V1..V9, swagger accesibil
+
+Scenario: reset
+  When docker compose down -v
+  Then volumul DB e șters
+```
+**Tasks:**
+- [ ] serviciu `backend` (`build: .`, `depends_on: mysql service_healthy`, `env_file: .env`)
+- [ ] `.env.example` (committed) + `.env` în `.gitignore`
+- [ ] verify pe mașină curată
+
+**DoD:** o singură comandă ridică stack-ul.
+
+---
+
+## Definition of Done (global, pe FIECARE story)
 
 - [ ] `./mvnw clean compile` → BUILD SUCCESS, fără warning-uri noi
 - [ ] schema schimbată DOAR prin migrație Flyway nouă (`ddl-auto: validate` trece)
-- [ ] DTO request/response (nu entitate expusă), validare pe input
-- [ ] `@PreAuthorize` pe FIECARE endpoint care citește/modifică date sensibile
-- [ ] erori prin `GlobalExceptionHandler` (Problem Details + `errorCode`), texte în engleză
-- [ ] teste: unit pentru logica deterministă (energie/SoC/curtailment/validator), integrare pentru endpoint-uri securizate
-- [ ] commit separat: `git commit -m "<EPIC><Story>: <descriere>"`
+- [ ] DTO request/response (nu entitate expusă), `@Valid` pe input
+- [ ] serviciu `command`/`query` (interfață + `Impl`), mapper static, excepții cu mesaj din `ErrorConstants`
+- [ ] `@PreAuthorize("hasAuthority('...')")` pe endpoint sensibil; owner check în service unde e `USER`
+- [ ] erori prin `GlobalExceptionsHandler` (`ApiErrorResponse`), texte în engleză
+- [ ] teste: unit pentru logica deterministă, integrare pentru endpoint-uri securizate
+- [ ] commit: `git commit -m "[F<epic>-S<nr>] <descriere>"`
 
 ---
 
 ## Ordine recomandată
 
-1. **EPIC A, B, C** — fundație + auth + CRUD case/baterii. Aici intri în ritm, commit-uri scurte.
-2. **EPIC D** — simularea (tick reproductibil + telemetrie). Prima parte „vie" a sistemului.
-3. **EPIC E, F, G** — inima deterministă (energie, SoC, curtailment, financiar). Aici stau testele unitare care contează la comisie. **Nu trece mai departe fără ele verzi.**
-4. **EPIC H, I** — agentul în ADVISORY (mock gateway întâi, provider real la Modul 8). Aici e contribuția nouă a lucrării.
-5. **EPIC J, K** — audit/rapoarte + WebSocket pentru dashboard.
-
-**Sfat:** ține mereu sistemul funcțional fără LLM (degradare sigură). Modelul **propune**, codul determinist **dispune** — asta aperi în fața comisiei.
+1. **EPIC 00–03** — fundație + auth + case/baterii. Teren cunoscut.
+2. **EPIC 04** — simularea (tick reproductibil + telemetrie).
+3. **EPIC 05–09** — inima deterministă. **Nu trece mai departe fără testele verzi.**
+4. **EPIC 10–11** — 📘 agentul în ADVISORY (mock întâi, Spring AI real la Modul 8). Contribuția nouă.
+5. **EPIC 12–13** — audit/rapoarte + WebSocket.
+6. **EPIC 14** — 📘 Docker: pornire cu o singură comandă pentru demo.
+</content>
