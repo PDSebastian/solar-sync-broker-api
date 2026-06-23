@@ -27,3 +27,20 @@ management:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+application:
+  jwt:
+    secretKey: ${JWT_SECRET_KEY:dev-only-solarsync-secret-key-please-change-in-prod-0123456789ABCDEF}
+    tokenExpirationAfterDays: 7
+
+solarsync:
+  simulation:
+    seed: 42
+    tick-seconds: 60
+    real-to-virtual-ratio: 60
+  grid:
+    transformer-nominal-kw: 50
+    safety-margin-percent: 10
+  agent:
+    mode: ADVISORY
+    planning-interval-seconds: 300

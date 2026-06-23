@@ -10,6 +10,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import ro.mycode.solarsyncbroker.system.security.UserPermissions;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -47,7 +48,12 @@ public class User implements UserDetails {
     private String password;
 
 
-    private Set<UserPermissions> permissions;
+    @ElementCollection(targetClass = UserPermissions.class, fetch = FetchType.EAGER)
+    @CollectionTable(name = "user_permissions", joinColumns = @JoinColumn(name = "user_id"))
+    @Enumerated(EnumType.STRING)
+    @Column(name = "permission")
+    @Builder.Default
+    private Set<UserPermissions> permissions = new HashSet<>();
 
 
     @Override

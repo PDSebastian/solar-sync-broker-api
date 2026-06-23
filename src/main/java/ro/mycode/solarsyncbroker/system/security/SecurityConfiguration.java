@@ -43,7 +43,7 @@ public class SecurityConfiguration {
     public SecurityConfiguration(UserDetailsService userDetailsService,
                                  @Value("${application.jwt.secretKey}") String secretKey,
                                  JWTAuthentificationEntryPoint jwtAuthenticationEntryPoint,
-                                 SecurityAcessDeniedHandler securityAccessDeniedHandler) {
+                                 SecurityAccessDeniedHandler securityAccessDeniedHandler) {
         this.userDetailsService = userDetailsService;
         this.secretKey = secretKey;
         this.securityAccessDeniedHandler = securityAccessDeniedHandler;
