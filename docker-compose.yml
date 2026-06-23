@@ -1,0 +1,21 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: solarsync-mysql
+    environment:
+      MYSQL_DATABASE: solarsync
+      MYSQL_USER: solarsync
+      MYSQL_PASSWORD: solarsync
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - solarsync-mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "solarsync", "-psolarsync"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  solarsync-mysqldata:
