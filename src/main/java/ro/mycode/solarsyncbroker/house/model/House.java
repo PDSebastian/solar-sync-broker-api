@@ -32,7 +32,7 @@ public class House {
     private double maxImportPowerKw;
 
     @NotNull
-    private double minExportPowerKw;
+    private double maxExportPowerKw;
 
     private boolean enabled=true;
 
@@ -49,7 +49,7 @@ public class House {
                 ", name='" + name + '\'' +
                 ", pvPeakPowerKw=" + pvPeakPowerKw +
                 ", maxImportPowerKw=" + maxImportPowerKw +
-                ", minExportPowerKw=" + minExportPowerKw +
+                ", minExportPowerKw=" + maxExportPowerKw +
                 ", enabled=" + enabled +
                 ", owner=" + owner +
                 '}';
@@ -59,11 +59,11 @@ public class House {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         House house = (House) o;
-        return Double.compare(pvPeakPowerKw, house.pvPeakPowerKw) == 0 && Double.compare(maxImportPowerKw, house.maxImportPowerKw) == 0 && Double.compare(minExportPowerKw, house.minExportPowerKw) == 0 && enabled == house.enabled && Objects.equals(id, house.id) && Objects.equals(name, house.name) && Objects.equals(owner, house.owner);
+        return Double.compare(pvPeakPowerKw, house.pvPeakPowerKw) == 0 && Double.compare(maxImportPowerKw, house.maxImportPowerKw) == 0 && Double.compare(maxExportPowerKw, house.maxExportPowerKw) == 0 && enabled == house.enabled && Objects.equals(id, house.id) && Objects.equals(name, house.name) && Objects.equals(owner, house.owner);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, pvPeakPowerKw, maxImportPowerKw, minExportPowerKw, enabled, owner);
+        return Objects.hash(id, name, pvPeakPowerKw, maxImportPowerKw, maxExportPowerKw, enabled, owner);
     }
 }

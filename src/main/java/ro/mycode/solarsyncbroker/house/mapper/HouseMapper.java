@@ -15,7 +15,7 @@ public class HouseMapper {
                 house.getName(),
                 house.getPvPeakPowerKw(),
                 house.getMaxImportPowerKw(),
-                house.getMinExportPowerKw()
+                house.getMaxExportPowerKw()
         );
     }
 }
