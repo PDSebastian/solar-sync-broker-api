@@ -11,8 +11,10 @@ public class UserMapper {
             return null;
         }
         return new UserResponse(
-                .id(user.getId())
-                .
-        )
+               user.getId(),
+                user.getEmail(),
+                user.getPassword(),
+                user.getPermissions()
+        );
     }
 }
