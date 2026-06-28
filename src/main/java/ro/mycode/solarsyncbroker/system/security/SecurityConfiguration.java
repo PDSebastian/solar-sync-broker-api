@@ -23,11 +23,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import static org.springframework.security.config.http.SessionCreationPolicy.STATELESS;
 
@@ -70,13 +70,13 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/v2/auth/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**").permitAll() // Sincronizat la v1
                         .requestMatchers(SecurityConstants.PUBLIC_URLS).permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .authenticationProvider(authenticationProvider())
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint((AuthenticationEntryPoint) jwtAuthenticationEntryPoint)
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // Eliminat cast-ul redundant
                         .accessDeniedHandler(securityAccessDeniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(publicAwareBearerTokenResolver())
@@ -90,14 +90,14 @@ public class SecurityConfiguration {
         DefaultBearerTokenResolver defaultResolver = new DefaultBearerTokenResolver();
         return request -> {
             String uri = request.getRequestURI();
-            for (String publicUrl : SecurityConstants.PUBLIC_URLS) {
-                if (publicUrl.equals(uri)) {
-                    return null;
-                }
+            boolean isPublic = Arrays.stream(SecurityConstants.PUBLIC_URLS).anyMatch(uri::equals);
+            if (isPublic) {
+                return null;
             }
             return defaultResolver.resolve(request);
         };
     }
+
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
@@ -113,15 +113,10 @@ public class SecurityConfiguration {
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
         grantedAuthoritiesConverter.setAuthoritiesClaimName("authorities");
-        grantedAuthoritiesConverter.setAuthorityPrefix("");
+        grantedAuthoritiesConverter.setAuthorityPrefix(""); // Fără prefix tip ROLE_ pentru a se potrivi direct cu hasAuthority()
 
         JwtAuthenticationConverter authenticationConverter = new JwtAuthenticationConverter();
         authenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
         return authenticationConverter;
     }
-
-
-
-
-
 }

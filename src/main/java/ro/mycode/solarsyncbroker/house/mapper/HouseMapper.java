@@ -6,16 +6,20 @@ import ro.mycode.solarsyncbroker.house.model.House;
 
 @Component
 public class HouseMapper {
+
     public static HouseResponse houseToHouseResponse(House house) {
         if (house == null) {
             return null;
         }
+
         return new HouseResponse(
                 house.getId(),
                 house.getName(),
                 house.getPvPeakPowerKw(),
                 house.getMaxImportPowerKw(),
-                house.getMaxExportPowerKw()
+                house.getMaxExportPowerKw(),
+                house.isEnabled(),
+                house.getOwner().getId()
         );
     }
 }

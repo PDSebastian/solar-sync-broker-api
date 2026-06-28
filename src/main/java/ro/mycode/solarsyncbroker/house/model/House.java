@@ -17,30 +17,30 @@ import java.util.Objects;
 @Builder
 @Table(name="houses")
 public class House {
+
     @Id
     @GeneratedValue(strategy= GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Numele este obligstoriu")
+    @NotBlank(message = "Numele este obligatoriu")
     @Size(min=1, max=100)
     private String name;
 
     @NotNull
-    private double pvPeakPowerKw;
+    private Double pvPeakPowerKw;
 
     @NotNull
-    private double maxImportPowerKw;
+    private Double maxImportPowerKw;
 
     @NotNull
-    private double maxExportPowerKw;
+    private Double maxExportPowerKw;
 
-    private boolean enabled=true;
-
+    @Builder.Default
+    private boolean enabled = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name= "owner_id", unique = true, nullable = false)
+    @JoinColumn(name = "owner_id", nullable = false)
     private User owner;
-
 
     @Override
     public String toString() {
@@ -49,21 +49,21 @@ public class House {
                 ", name='" + name + '\'' +
                 ", pvPeakPowerKw=" + pvPeakPowerKw +
                 ", maxImportPowerKw=" + maxImportPowerKw +
-                ", minExportPowerKw=" + maxExportPowerKw +
+                ", maxExportPowerKw=" + maxExportPowerKw +
                 ", enabled=" + enabled +
-                ", owner=" + owner +
                 '}';
     }
 
     @Override
     public boolean equals(Object o) {
+        if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         House house = (House) o;
-        return Double.compare(pvPeakPowerKw, house.pvPeakPowerKw) == 0 && Double.compare(maxImportPowerKw, house.maxImportPowerKw) == 0 && Double.compare(maxExportPowerKw, house.maxExportPowerKw) == 0 && enabled == house.enabled && Objects.equals(id, house.id) && Objects.equals(name, house.name) && Objects.equals(owner, house.owner);
+        return Objects.equals(id, house.id) && Objects.equals(name, house.name);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, name, pvPeakPowerKw, maxImportPowerKw, maxExportPowerKw, enabled, owner);
+        return Objects.hash(id, name);
     }
 }

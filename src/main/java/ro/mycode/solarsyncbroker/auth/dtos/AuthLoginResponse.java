@@ -1,7 +1,6 @@
 package ro.mycode.solarsyncbroker.auth.dtos;
 
 import ro.mycode.solarsyncbroker.system.security.UserPermissions;
-
 import java.util.Set;
 
 public record AuthLoginResponse(
@@ -11,7 +10,4 @@ public record AuthLoginResponse(
         String email,
         Set<UserPermissions> directPermissions,
         String token
-
-
-) {
-}
+) {}

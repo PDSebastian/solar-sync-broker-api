@@ -2,7 +2,6 @@ package ro.mycode.solarsyncbroker.house.service.queryService;
 
 import ro.mycode.solarsyncbroker.house.dtos.HouseResponse;
 
-import java.awt.image.Kernel;
 import java.util.List;
 
 public interface HouseQueryService {

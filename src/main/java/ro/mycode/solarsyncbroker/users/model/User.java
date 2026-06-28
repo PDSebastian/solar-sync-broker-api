@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.*;
-import org.hibernate.usertype.UserType;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -16,38 +15,44 @@ import java.util.Objects;
 import java.util.Set;
 
 @Entity
-@Table(name="users")
+@Table(name = "users")
 @Getter
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
 @Builder
-public class User implements UserDetails {
+public class User  implements UserDetails {
 
     @Id
-    @GeneratedValue(strategy= GenerationType.AUTO)
-    Long id;
-
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @NotBlank(message = "Numele este obligatoriu")
-    @Size(min=1, max = 100)
+    @Size(min = 1, max = 100)
+    @Column(name = "first_name", nullable = false)
     private String firstName;
 
     @NotBlank(message = "Prenumele este obligatoriu")
-    @Size(min=1, max = 100)
+    @Size(min = 1, max = 100)
+    @Column(name = "last_name", nullable = false)
     private String lastName;
 
     private int age;
 
-    @Column(unique = true)
+    @Column(unique = true, nullable = false)
     @NotBlank(message = "Emailul este obligatoriu")
-    @Size(min=1, max = 100)
+    @Size(min = 1, max = 100)
     private String email;
 
     @NotBlank(message = "Parola este obligatorie")
-    @Size(min=1, max = 100)
+    @Size(min = 1, max = 100)
+    @Column(nullable = false)
     private String password;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_type", nullable = false)
+
+    private UserType userType;
 
     @ElementCollection(targetClass = UserPermissions.class, fetch = FetchType.EAGER)
     @CollectionTable(name = "user_permissions", joinColumns = @JoinColumn(name = "user_id"))
@@ -56,11 +61,10 @@ public class User implements UserDetails {
     @Builder.Default
     private Set<UserPermissions> permissions = new HashSet<>();
 
-
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return permissions.stream()
-                .map(permissions->new SimpleGrantedAuthority(permissions.getPermission()))
+                .map(p -> new SimpleGrantedAuthority(p.getPermission()))
                 .toList();
     }
 
@@ -70,28 +74,28 @@ public class User implements UserDetails {
     }
 
     @Override
+    public boolean isAccountNonExpired() { return true; }
+
+    @Override
+    public boolean isAccountNonLocked() { return true; }
+
+    @Override
+    public boolean isCredentialsNonExpired() { return true; }
+
+    @Override
+    public boolean isEnabled() { return true; }
+
+    // Equals, HashCode și ToString actualizate cu userType
+    @Override
     public boolean equals(Object o) {
+        if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         User user = (User) o;
-        return age == user.age && Objects.equals(id, user.id) && Objects.equals(firstName, user.firstName) && Objects.equals(lastName, user.lastName) && Objects.equals(email, user.email) && Objects.equals(password, user.password) && Objects.equals(permissions, user.permissions);
+        return age == user.age && Objects.equals(id, user.id) && Objects.equals(firstName, user.firstName) && Objects.equals(lastName, user.lastName) && Objects.equals(email, user.email) && Objects.equals(password, user.password) && userType == user.userType && Objects.equals(permissions, user.permissions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, firstName, lastName, age, email, password, permissions);
+        return Objects.hash(id, firstName, lastName, age, email, password, userType, permissions);
     }
-
-    @Override
-    public String toString() {
-        return "User{" +
-                "id=" + id +
-                ", firstName='" + firstName + '\'' +
-                ", lastName='" + lastName + '\'' +
-                ", age=" + age +
-                ", email='" + email + '\'' +
-                ", password='" + password + '\'' +
-                ", permissions=" + permissions +
-                '}';
-    }
-
 }
