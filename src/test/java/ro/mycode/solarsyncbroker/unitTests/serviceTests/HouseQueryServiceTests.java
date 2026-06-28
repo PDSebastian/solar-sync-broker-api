@@ -1,6 +1,5 @@
-package ro.mycode.solarsyncbroker.unitTests;
+package ro.mycode.solarsyncbroker.unitTests.serviceTests;
 
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -9,7 +8,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ro.mycode.solarsyncbroker.house.dtos.HouseResponse;
 import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
-import ro.mycode.solarsyncbroker.house.service.queryService.HouseQueryService;
 import ro.mycode.solarsyncbroker.house.service.queryService.HouseQueryServiceImpl;
 import ro.mycode.solarsyncbroker.users.model.User;
 import ro.mycode.solarsyncbroker.users.model.UserType;
