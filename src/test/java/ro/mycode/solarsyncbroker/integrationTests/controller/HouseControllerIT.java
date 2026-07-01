@@ -69,7 +69,7 @@ public class HouseControllerIT {
     }
 
     @Test
-    @WithMockUser(authorities = {"HOUSE_VIEW", "USER", "ADMIN"})
+    @WithMockUser(authorities = {"house:view"})
     void getAllHouses() throws Exception {
         mockMvc.perform(get("/api/v1/houses"))
                 .andExpect(status().isOk())
@@ -79,7 +79,7 @@ public class HouseControllerIT {
     }
 
     @Test
-    @WithMockUser(authorities = {"USER", "ADMIN"})
+    @WithMockUser(authorities = {"house:manage"})
     void createHouse() throws Exception {
         HouseRequest houseRequest = new HouseRequest("Casa2", 6.0, 12.0, 5.5, userId);
 
