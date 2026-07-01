@@ -23,9 +23,6 @@ public class HouseControllerTest {
   @Test
     void createHouse() throws Exception {
 
-
-
-
   }
 
 

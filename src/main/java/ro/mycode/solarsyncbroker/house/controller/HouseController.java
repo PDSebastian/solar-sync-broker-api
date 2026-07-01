@@ -37,8 +37,8 @@ public class HouseController {
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('house:view')")
-    public ResponseEntity<HouseResponse> getHouseById(@PathVariable Long id, Principal principal) {
-        return ResponseEntity.ok(houseQueryService.getHouseForCaller(id, principal.getName()));
+    public ResponseEntity<HouseResponse> getHouseById(@PathVariable Long id, String email) {
+        return ResponseEntity.ok(houseQueryService.getHouseForCaller(id,email));
     }
 
 
