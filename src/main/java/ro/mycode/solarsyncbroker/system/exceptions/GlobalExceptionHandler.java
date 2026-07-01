@@ -4,13 +4,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ro.mycode.solarsyncbroker.battery.exceptions.BatteryAlreadyExistsException;
+import ro.mycode.solarsyncbroker.battery.exceptions.BatteryNotFoundException;
 import ro.mycode.solarsyncbroker.users.exceptions.UserAlreadyexistsException;
 import ro.mycode.solarsyncbroker.users.exceptions.UserNotFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     @ExceptionHandler({
-            UserNotFoundException.class
+            UserNotFoundException.class,
+            BatteryNotFoundException.class
 
 
     })
@@ -24,7 +27,8 @@ public class GlobalExceptionHandler {
     }
     @ExceptionHandler({
 
-            UserAlreadyexistsException.class
+            UserAlreadyexistsException.class,
+            BatteryAlreadyExistsException.class
 
     })
     public ResponseEntity<String> handleAlreadyExistsExceptions(RuntimeException e) {
