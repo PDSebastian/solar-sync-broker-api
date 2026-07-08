@@ -1,8 +1,8 @@
 # Code Review — solar-sync-broker-api
 
-Branch: `feat/fundatie` · Vertical-slice Spring Boot 3.5 (~1700 LOC)
-Slices: `auth`, `house`, `battery`, `users`, `system`
-Teste: **32 verzi** (unit + IT). Problemele de mai jos nu sunt prinse de teste.
+Branch: `feat/fundatie` · Vertical-slice Spring Boot 3.5 · Java 21
+Slices implementate: `auth`, `house`, `battery`, `users`, `system`
+Teste: **32 verzi** (unit + IT) — dar problemele 🔴 de mai jos **nu sunt prinse de teste**.
 
 ## Legendă severitate
 
@@ -10,11 +10,16 @@ Teste: **32 verzi** (unit + IT). Problemele de mai jos nu sunt prinse de teste.
 - 🟡 Design / consistență
 - ⚪ Cosmetic (dar vizibil la evaluarea de licență)
 
+## Reparat de la ultimul pass ✅
+
+- `House.equals`/`hashCode` reduse la `id + name` (nu mai includ toate câmpurile).
+- 401/403 ies acum ca `ApiErrorResponse` **JSON real** prin `JWTAuthentificationEntryPoint` + `SecurityAccessDeniedHandler`, populate cu `ApiErrorResponse.of(...)` (timestamp/error/path complete).
+
 ---
 
 ## 🔴 Trebuie reparate
 
-### 1. Autorizare bazată pe input de la client — `HouseController.getHouseById`
+### 1. Ownership decis din query param, nu din token — `HouseController.getHouseById`
 
 ```java
 @GetMapping("/{id}")
@@ -24,13 +29,19 @@ public ResponseEntity<HouseResponse> getHouseById(@PathVariable Long id, String 
 }
 ```
 
-`email` nu e legat de nimic (fără `@RequestParam` / `@AuthenticationPrincipal`), deci
-Spring îl tratează ca query param. `getHouseForCaller` decide accesul owner/admin pe baza
-acestui email — adică apelantul își trimite singur identitatea pe care se face verificarea.
+`email` e `String` fără adnotare → Spring îl rezolvă ca **request param opțional** (`?email=`).
+`getHouseForCaller` decide accesul pe baza acelui email:
 
-Un `USER` cu `house:view` poate citi casa altcuiva punând alt email în query.
-`@PreAuthorize` verifică doar că *ai permisiunea*, nu *a cui* casă o vezi — verificarea de
-ownership trebuie legată de principal, nu de un parametru.
+```java
+User caller = userRepository.findByEmail(email)...;   // identitate de la client
+if (caller.getUserType() != ADMIN && !h.getOwner().getId().equals(caller.getId()))
+    throw new HouseAccessDeniedHandler();
+```
+
+Deci **orice user autentificat citește orice casă**: `?email=<mailul owner-ului>` (check trece) sau
+`?email=<mail de admin>` (bypass total). `@PreAuthorize` verifică *că ai permisiunea*, nu *a cui*
+casă o vezi — ownership-ul trebuie legat de principal. Fără `?email` → `findByEmail(null)` →
+`IllegalArgumentException` → 500.
 
 **Fix:** ia identitatea din token.
 ```java
@@ -39,41 +50,63 @@ public ResponseEntity<HouseResponse> getHouseById(@PathVariable Long id, Princip
 }
 ```
 
-### 2. `BatteryQueryServiceImpl.getBatteryByHouseId` — logică inversată + slice mort
+### 2. `UserController` — dependență neinjectată + creare user nesecurizată
 
 ```java
-if (user.getUserType() != UserType.ADMIN) {
-    throw new HouseAccessDeniedHandler();
+@RestController @RequestMapping("/api/v1/user")
+public class UserController {
+    private UserCommandService userCommandService;   // niciodată injectat (fără constructor / @Autowired)
+
+    @PostMapping("/add")
+    public ResponseEntity<UserResponse> addUser(@RequestBody UserRequest userRequest){
+        UserResponse userResponse = userCommandService.addUser(userRequest);   // NPE: null
+        return ResponseEntity.status(HttpStatus.CREATED).build();              // și aruncă rezultatul
+    }
 }
 ```
 
-- Doar adminul poate citi vreodată o baterie — proprietarul casei nu-și poate vedea propria
-  baterie.
-- Nu există `BatteryController` în proiect → tot slice-ul `battery` e neatins prin HTTP
-  (incomplet).
-- „Not found" pentru baterie aruncă `HouseNotFoundException` (tip greșit).
+- `userCommandService` e `null` → **NPE / 500** la orice apel.
+- Chiar reparat, `addUser` creează user fără parolă și fără `userType` (`UserRequest` nu le are) →
+  user invalid; `save` apelat de două ori.
+- Fără `@PreAuthorize`. `UserRequest` importă greșit `org.hibernate.usertype.UserType`.
 
-**Fix:** aliniază regula la cea din `getHouseForCaller` (admin SAU owner) și adaugă
-controllerul + o `BatteryNotFoundException` corectă.
+**Fix:** scoate controllerul (crearea de user se face deja prin `/auth/register`) sau injectează prin
+constructor + securizează.
 
-### 3. `GlobalExceptionHandler` — status greșit + excepții nemapate
+### 3. `GlobalExceptionHandler` — status greșit, body ne-JSON, excepții nemapate
 
-- `handleNotFoundExceptions` întoarce **409 CONFLICT** pentru „not found" — ar trebui **404**.
-- Nu prinde deloc: `HouseNotFoundException`, `HouseAlreadyExistsExcption`,
-  `HouseAccessDeniedHandler`, `MethodArgumentNotValidException` (validare).
-  Toate devin **500** în loc de 404 / 403 / 400.
-- Body-ul e `apiErrorResponse.toString()` — trimiți `toString()`-ul unui record, nu JSON;
-  `timestamp` / `error` / `path` rămân `null` (builder-ul setează doar `message` + `status`).
+```java
+public ResponseEntity<String> handleNotFoundExceptions(RuntimeException e) {
+    ApiErrorResponse r = ApiErrorResponse.builder()
+            .message(e.getMessage()).status(HttpStatus.CONFLICT.value()).build();
+    return new ResponseEntity<>(r.toString(), HttpStatus.CONFLICT);   // 409 pt "not found" + toString()
+}
+```
 
-**Fix:** handlere separate cu statusul corect (404/409/403/400), întoarce obiectul
-`ApiErrorResponse` (nu `.toString()`), populează toate câmpurile.
+- „Not found" → **409** în loc de **404**.
+- Trimiți `r.toString()` (nu JSON); `timestamp`/`error`/`path` rămân `null` (builder-ul setează doar 2
+  câmpuri). Ai deja `ApiErrorResponse.of(...)` care le populează pe toate — folosește-l.
+- **Nemapate → devin 500:** `HouseNotFoundException`, `HouseAlreadyExistsExcption`,
+  `HouseAccessDeniedHandler` (ar fi 403), `MethodArgumentNotValidException` (validare → 400/422),
+  `IllegalArgumentException` din #1.
 
-### 4. `ddl-auto: create` în `application.yml`
+**Fix:** handlere separate cu statusul corect (404/409/403/400-422), întoarce obiectul
+`ApiErrorResponse` (nu `.toString()`).
 
-Recreează schema (pierzi datele) la fiecare pornire. Există folder `db/migration` dar
-`flyway.enabled: false`.
+### 4. Strategia de schemă contrazice backlog-ul
 
-**Fix:** `ddl-auto: validate` (sau `update`) + `flyway.enabled: true` cu migrări.
+```yaml
+jpa.hibernate.ddl-auto: create      # recreează schema (pierzi datele) la fiecare pornire
+flyway.enabled: false               # deși db/migration/ există (gol)
+```
+
+Backlog-ul cere **Flyway + `ddl-auto: validate`**. În plus, numele DB nu se potrivește între surse:
+- `application.yml` → `solarSyncBroker-api`
+- `docker-compose.yml` + README → `solarsync`
+
+→ `docker compose up` + app nu se leagă azi.
+
+**Fix:** `ddl-auto: validate` + `flyway.enabled: true` cu migrări; un singur nume de DB peste tot.
 
 ---
 
@@ -81,14 +114,17 @@ Recreează schema (pierzi datele) la fiecare pornire. Există folder `db/migrati
 
 | # | Problemă | Unde |
 |---|---|---|
-| 5 | `PUBLIC_URLS` conține rute `v2` inexistente (controllerele sunt `v1`) + string invalid `" http://localhost:8080/login#/"` (spațiu în față) → `publicAwareBearerTokenResolver` devine cod mort | `SecurityConstants` |
-| 6 | `ISSUER` / `AUDIENCE` = `controllerPractice-*` — rămas dintr-un proiect vechi | `SecurityConstants` |
-| 7 | `JWTTokenProvider`: `getAuthorities` / `getAuthentication` / `isTokenValid` / `getSubject` sunt cod mort — validarea o face resource server-ul (`NimbusJwtDecoder`) | `JWTTokenProvider` |
-| 8 | Mapper-e `@Component` cu metode `static` apelate static → adnotarea e inutilă | `HouseMapper`, `BatteryMapper` |
-| 9 | Inconsistență stereotip: command = `@Service`, query = `@Component` | `*QueryServiceImpl` |
-| 10 | `AbstractAuditable` definit dar niciun entity nu-l extinde → auditing nefolosit | `system/model` |
-| 11 | `updateHouse` nu verifică unicitatea numelui (doar `createHouse` o face) → redenumire în coliziune | `HouseCommandServiceImpl` |
-| 12 | `equals` / `hashCode` pe entități includ toate câmpurile (inclusiv `password`, colecții mutabile) — anti-pattern JPA; recomandat doar `id` | `User`, `Battery` |
+| 5 | `getBatteryByHouseId`: doar `ADMIN` poate citi (owner-ul nu-și vede bateria); „not found" aruncă `HouseNotFoundException` (tip greșit); **nu există `BatteryController`** → tot slice-ul `battery` e neatins prin HTTP | `BatteryQueryServiceImpl` |
+| 6 | `PUBLIC_URLS` = rute `v2` inexistente + string invalid `" http://localhost:8080/login#/"` (spațiu în față); merge doar pentru că `/api/v1/auth/**` e permis separat → `publicAwareBearerTokenResolver` e cod mort | `SecurityConstants` |
+| 7 | `ISSUER`/`AUDIENCE` = `controllerPractice-*` (proiect vechi); oricum `NimbusJwtDecoder` nu validează issuer/audience aici | `SecurityConstants` |
+| 8 | `JWTTokenProvider`: `getAuthorities`/`getAuthentication`/`isTokenValid`/`getSubject`/`getClaimsFromToken` = cod mort (validarea o face resource server-ul) | `JWTTokenProvider` |
+| 9 | `permissionsForType`: `OPERATOR` și `AGENT` cad pe ramura `else` → primesc exact ce primește `USER` | `AuthServiceImpl` |
+| 10 | Mapper-e `@Component` cu metode `static` → adnotarea nu face nimic | `HouseMapper`, `BatteryMapper`, `UserMapper` |
+| 11 | Stereotipuri inconsistente: `HouseCommandServiceImpl`=`@Service`, `UserCommandServiceImpl`=`@Component`, query=`@Component` | services |
+| 12 | `@EnableJpaAuditing` + `AbstractAuditable` există, dar niciun entity nu-l extinde → auditing nefolosit | `system/model` |
+| 13 | `updateHouse` nu verifică unicitatea numelui (doar `createHouse` o face) → redenumire în coliziune | `HouseCommandServiceImpl` |
+| 14 | `User`/`Battery`: `equals`/`hashCode` includ toate câmpurile (inclusiv `password`, colecția `permissions`) — anti-pattern JPA; recomandat doar `id` (ca la `House`, deja reparat) | `User`, `Battery` |
+| 15 | `AuthLoginResponse` definit dar nefolosit; `HouseQueryService.getHouseById(Long)` = metodă moartă | dtos / query |
 
 ---
 
@@ -96,27 +132,30 @@ Recreează schema (pierzi datele) la fiecare pornire. Există folder `db/migrati
 
 Typos în nume de clase / câmpuri / tabele — un examinator le observă:
 
-`AuthReqisterRequest`, `AuthLoginrequest`, `HouseAlreadyExistsExcption`,
-`UserAlreadyexistsException`, `JWTAuthentificationEntryPoint`, `efficientyPercent`,
-`@Table("bateries")`.
+`AuthReqisterRequest`, `AuthLoginrequest`, `HouseAlreadyExistsExcption`, `UserAlreadyexistsException`,
+`JWTAuthentificationEntryPoint`, `efficientyPercent`, `@Table("bateries")`.
 
-`HouseAccessDeniedHandler` e de fapt o `RuntimeException`, nu un handler — numele induce în
-eroare.
+`HouseAccessDeniedHandler` e de fapt un `RuntimeException`, nu un handler — numele induce în eroare.
+`UserResponse.now` e un nume ciudat de câmp. `@NoArgsConstructor` + `@NotBlank` nefolosit pe
+`SecurityConstants`.
 
 ---
 
 ## Puncte forte
 
-- Structură vertical-slice curată și consecventă; separare command / query.
-- JWT stateless + method security cu `hasAuthority`; fără prefix `ROLE_`.
-- DTO-uri ca `record`; validare pe entități.
-- `open-in-view: false`; secret prin env var; `createDatabaseIfNotExist` doar pentru dev.
+- Vertical-slice curat, command/query separate; DTO-uri ca `record`; validare pe input.
+- JWT stateless + `@EnableMethodSecurity` cu `hasAuthority`, fără prefix `ROLE_`.
+- 401/403 corecte, JSON prin `ApiErrorResponse.of(...)` — modelul de urmat și în `GlobalExceptionHandler`.
+- `open-in-view: false`; secret prin env var.
 
 ---
 
 ## Ordine recomandată de reparare
 
-1. #1 și #3 (securitate + erori HTTP corecte) — cele mai vizibile la o demonstrație.
-2. #4 (ddl-auto) înainte de a avea date reale.
-3. #2 + `BatteryController` pentru a completa slice-ul `battery`.
-4. Restul 🟡 / ⚪ ca pas de curățenie.
+1. **#1 + #3** — securitatea pe owner + erorile HTTP corecte (cel mai vizibil la demo).
+2. **#2** — scoate/repară `UserController` (gaură + NPE).
+3. **#4** — Flyway + `validate` + un singur nume de DB, înainte de date reale.
+4. **#5 + `BatteryController`** — completează slice-ul `battery`.
+5. Restul 🟡 / ⚪ ca pas de curățenie.
+
+> Un singur IT „user străin → 403" pe `/houses/{id}` ar fi prins #1 (gaura principală).
