@@ -1,6 +1,7 @@
 package ro.mycode.solarsyncbroker.unitTests.serviceTests;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -107,13 +108,22 @@ class HouseCommandServiceTests {
 
         when(houseRepository.findById(houseId)).thenReturn(Optional.of(existingHouse));
         when(userRepository.findById(userId)).thenReturn(Optional.of(owner));
-        when(houseRepository.save(any(House.class))).thenReturn(existingHouse);
+        when(houseRepository.existsByName(updatedName)).thenReturn(false);
+        when(houseRepository.save(any(House.class))).thenAnswer(inv -> inv.getArgument(0));
 
         HouseResponse response = houseCommandService.updateHouse(houseId, request);
 
+        ArgumentCaptor<House> captor = ArgumentCaptor.forClass(House.class);
+        verify(houseRepository).save(captor.capture());
+        House saved = captor.getValue();
+
+        assertEquals(updatedName, saved.getName());
+        assertEquals(pvPower, saved.getPvPeakPowerKw());
+        assertEquals(maxImport, saved.getMaxImportPowerKw());
+        assertEquals(maxExport, saved.getMaxExportPowerKw());
+        assertEquals(userId, saved.getOwner().getId());
+
         assertNotNull(response);
-        assertEquals(updatedName, existingHouse.getName());
-        assertEquals(pvPower, existingHouse.getPvPeakPowerKw());
         assertEquals(updatedName, response.name());
     }
 
@@ -154,6 +164,18 @@ class HouseCommandServiceTests {
 
         HouseResponse response = houseCommandService.patchHouse(houseId, patchRequest);
 
+
+        ArgumentCaptor<House> captor = ArgumentCaptor.forClass(House.class);
+        verify(houseRepository).save(captor.capture());
+        House saved = captor.getValue();
+
+        assertEquals(patchedName, saved.getName());
+        assertEquals(originalPvPower, saved.getPvPeakPowerKw());
+        assertEquals(originalMaxImport, saved.getMaxImportPowerKw());
+        assertEquals(originalMaxExport, saved.getMaxExportPowerKw());
+        assertEquals(userId, saved.getOwner().getId());
+
+
         assertNotNull(response);
         assertEquals(patchedName, existingHouse.getName());
         assertEquals(originalPvPower, existingHouse.getPvPeakPowerKw());
@@ -167,6 +189,8 @@ class HouseCommandServiceTests {
         when(houseRepository.existsById(houseId)).thenReturn(true);
 
         assertDoesNotThrow(() -> houseCommandService.deleteHouse(houseId));
+
+        verify(houseRepository).deleteById(houseId);
     }
 
     @Test

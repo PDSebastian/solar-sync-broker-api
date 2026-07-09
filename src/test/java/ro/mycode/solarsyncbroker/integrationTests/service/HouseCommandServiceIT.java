@@ -142,6 +142,9 @@ class HouseCommandServiceIT {
         assertNotNull(response);
         assertEquals("Casa Patch", response.name());
         assertEquals(4.0, response.pvPeakPowerKw());
+        assertEquals(10.0, response.maxImportPowerKw());
+        assertEquals(4.0, response.maxExportPowerKw());
+        assertEquals(4.0, response.pvPeakPowerKw());
     }
 
     @Test
