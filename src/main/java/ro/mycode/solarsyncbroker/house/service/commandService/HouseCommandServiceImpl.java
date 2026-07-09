@@ -55,6 +55,10 @@ public class HouseCommandServiceImpl implements HouseCommandService {
         User owner = userRepository.findById(houseRequest.ownerId())
                 .orElseThrow(() -> new UserNotFoundException());
 
+        if(!house.getName().equals(houseRequest.name()) && houseRepository.existsByName(houseRequest.name())) {
+            throw new HouseAlreadyExistsExcption();
+        }
+
         house.setName(houseRequest.name());
         house.setPvPeakPowerKw(houseRequest.pvPeakPowerKw());
         house.setMaxImportPowerKw(houseRequest.maxImportPowerKw());

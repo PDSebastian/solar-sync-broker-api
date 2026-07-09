@@ -1,6 +1,6 @@
 package ro.mycode.solarsyncbroker.users.service.commandService;
 
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ro.mycode.solarsyncbroker.users.dtos.UserRequest;
 import ro.mycode.solarsyncbroker.users.dtos.UserResponse;
@@ -9,7 +9,7 @@ import ro.mycode.solarsyncbroker.users.mapper.UserMapper;
 import ro.mycode.solarsyncbroker.users.model.User;
 import ro.mycode.solarsyncbroker.users.repository.UserRepository;
 
-@Component
+@Service
 public class UserCommandServiceImpl implements UserCommandService {
     UserRepository userRepository;
     public UserCommandServiceImpl(UserRepository userRepository) {

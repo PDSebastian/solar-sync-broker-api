@@ -28,10 +28,13 @@ public class BatteryQueryServiceImpl implements BatteryQueryService {
         Battery battery=batteryRepository.findBatteryByHouseId(houseId).orElseThrow(HouseNotFoundException::new);
 
 
-        if(user.getUserType()!=UserType.ADMIN){
+        if(user.getUserType()!=UserType.ADMIN && !battery.getHouse().getOwner().getId().equals(user.getId())){
             throw new HouseAccessDeniedHandler();
         }
 
+
       return BatteryMapper.batterytoBatteryResponse(battery);
     }
+
+
 }

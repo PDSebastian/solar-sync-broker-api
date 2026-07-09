@@ -1,10 +1,8 @@
 package ro.mycode.solarsyncbroker.battery.mapper;
 
-import org.springframework.stereotype.Component;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryResponse;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 
-@Component
 public class BatteryMapper {
     public static BatteryResponse batterytoBatteryResponse(Battery battery){
         if(battery==null){

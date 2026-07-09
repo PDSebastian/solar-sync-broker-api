@@ -10,9 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.annotation.Transactional;
-import ro.mycode.solarsyncbroker.house.controller.HouseController;
 import ro.mycode.solarsyncbroker.house.dtos.HouseRequest;
 import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
@@ -25,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
-@AutoConfigureMockMvc(addFilters = false)
+@AutoConfigureMockMvc()
 @ActiveProfiles("test")
 @Transactional
 public class HouseControllerIT {
@@ -50,7 +48,7 @@ public class HouseControllerIT {
         User user = User.builder()
                 .firstName("Pop")
                 .lastName("Andrei")
-                .email("popAndrei@gmail.com")
+                .email("andrei1.popescu@solarsync.ro")
                 .password("123")
                 .userType(UserType.USER)
                 .build();
@@ -91,28 +89,31 @@ public class HouseControllerIT {
                 .andExpect(jsonPath("$.name").value("Casa2"))
                 .andExpect(jsonPath("$.pvPeakPowerKw").value(6.0));
     }
+
     @Test
     @WithMockUser(authorities = {"house:manage"})
     void updateHouse() throws Exception {
         HouseRequest houseRequest = new HouseRequest("Casa2", 6.0, 12.0, 5.5, userId);
         mockMvc.perform(put("/api/v1/houses/" + houseId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(houseRequest)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(houseRequest)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Casa2"))
                 .andExpect(jsonPath("$.pvPeakPowerKw").value(6.0));
     }
+
     @Test
     @WithMockUser(authorities = {"house:manage"})
     void patchHouse() throws Exception {
         HouseRequest houseRequest= new HouseRequest("Casa2", 6.0, 12.0, 5.5, userId);
         mockMvc.perform(patch("/api/v1/houses/" + houseId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(houseRequest)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(houseRequest)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Casa2"))
                 .andExpect(jsonPath("$.pvPeakPowerKw").value(6.0));
     }
+
     @Test
     @WithMockUser(authorities = {"house:manage"})
     void deleteHouse() throws Exception {
@@ -120,9 +121,18 @@ public class HouseControllerIT {
                 .andExpect(status().isNoContent());
     }
 
+    @Test
+    void testGetHouseByIdReturnsUnotharized() throws Exception {
+        mockMvc.perform(get("/api/v1/houses/" + houseId))
+                .andExpect(status().isUnauthorized());
+    }
 
-
-
+    @Test
+    @WithMockUser(authorities = {"FARA_DREPTURI"})
+    void testGetHouseByIdWithoughtAuthorisation() throws Exception {
+        mockMvc.perform(get("/api/v1/houses/" + houseId))
+                .andExpect(status().isForbidden());
+    }
 
 
 }

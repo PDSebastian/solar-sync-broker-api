@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.NoArgsConstructor;
 
 @NoArgsConstructor
+@NotBlank
+
 public class SecurityConstants {
     public static final String TOKEN_PREFIX = "Bearer";
     public static final String JWT_TOKEN_HEADER = "Jwt-Token";

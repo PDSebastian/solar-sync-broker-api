@@ -1,10 +1,8 @@
 package ro.mycode.solarsyncbroker.house.mapper;
 
-import org.springframework.stereotype.Component;
 import ro.mycode.solarsyncbroker.house.dtos.HouseResponse;
 import ro.mycode.solarsyncbroker.house.model.House;
 
-@Component
 public class HouseMapper {
 
     public static HouseResponse houseToHouseResponse(House house) {
