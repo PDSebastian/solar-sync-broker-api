@@ -70,13 +70,20 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll() // Sincronizat la v1
+                        .requestMatchers("/api/v1/auth/**").permitAll()
                         .requestMatchers(SecurityConstants.PUBLIC_URLS).permitAll()
-                        .requestMatchers("/v1/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // Am adăugat /v3/api-docs/** de care are nevoie SpringDoc implicit:
+                        .requestMatchers(
+                                "/v3/api-docs/**",
+                                "/v1/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/index.html"
+                        ).permitAll()
                         .anyRequest().authenticated())
                 .authenticationProvider(authenticationProvider())
                 .exceptionHandling(exception -> exception
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // Eliminat cast-ul redundant
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
                         .accessDeniedHandler(securityAccessDeniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(publicAwareBearerTokenResolver())
