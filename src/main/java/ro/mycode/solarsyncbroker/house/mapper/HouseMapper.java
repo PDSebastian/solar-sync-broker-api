@@ -1,0 +1,23 @@
+package ro.mycode.solarsyncbroker.house.mapper;
+
+import ro.mycode.solarsyncbroker.house.dtos.HouseResponse;
+import ro.mycode.solarsyncbroker.house.model.House;
+
+public class HouseMapper {
+
+    public static HouseResponse houseToHouseResponse(House house) {
+        if (house == null) {
+            return null;
+        }
+
+        return new HouseResponse(
+                house.getId(),
+                house.getName(),
+                house.getPvPeakPowerKw(),
+                house.getMaxImportPowerKw(),
+                house.getMaxExportPowerKw(),
+                house.isEnabled(),
+                house.getOwner().getId()
+        );
+    }
+}
