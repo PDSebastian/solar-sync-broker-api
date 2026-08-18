@@ -9,7 +9,8 @@ import ro.mycode.solarsyncbroker.battery.exceptions.BatterySocLimitException;
 
 
 @Component
-public class BatteryCommandValidatorImpl implements BatteryCommandValidator {
+public class
+BatteryCommandValidatorImpl implements BatteryCommandValidator {
 
     private static final double DEFAULT_CAPACITY_KWH = 10.0;
     private static final double MIN_SOC_PERCENT = 10.0;
