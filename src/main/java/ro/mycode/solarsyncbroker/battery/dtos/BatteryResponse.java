@@ -5,7 +5,7 @@ public record BatteryResponse(
         Double socPercent,
         Double maxChargePowerKw,
         Double maxDischargePowerKw,
-        Double efficientyPercent,
+        Double efficiencyPercent,
         Long houseId
 ) {
 }

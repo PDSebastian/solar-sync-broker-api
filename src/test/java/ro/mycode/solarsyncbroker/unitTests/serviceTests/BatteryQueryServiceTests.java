@@ -8,7 +8,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryResponse;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
-import ro.mycode.solarsyncbroker.battery.service.queryService.BatteryQueryService;
 import ro.mycode.solarsyncbroker.battery.service.queryService.BatteryQueryServiceImpl;
 import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.users.model.User;

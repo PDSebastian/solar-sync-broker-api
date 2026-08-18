@@ -56,7 +56,7 @@ public class Battery {
                 ", socPercent=" + socPercent +
                 ", maxChargePowerKw=" + maxChargePowerKw +
                 ", maxDischargePowerKw=" + maxDischargePowerKw +
-                ", efficientyPercent=" + efficientyPercent +
+                ", efficiencyPercent=" + efficientyPercent +
                 ", house=" + house +
                 '}';
     }
