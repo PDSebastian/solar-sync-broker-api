@@ -2,14 +2,20 @@ package ro.mycode.solarsyncbroker.battery.service.commandService;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import ro.mycode.solarsyncbroker.battery.dtos.BatteryAction;
-import ro.mycode.solarsyncbroker.battery.dtos.BatteryCommand;
-import ro.mycode.solarsyncbroker.battery.dtos.BatteryConfigurationRequest;
-import ro.mycode.solarsyncbroker.battery.dtos.BatteryResponse;
+import ro.mycode.solarsyncbroker.battery.command.model.CommandExecution;
+import ro.mycode.solarsyncbroker.battery.dtos.*;
 import ro.mycode.solarsyncbroker.battery.exceptions.BatteryNotFoundException;
 import ro.mycode.solarsyncbroker.battery.mapper.BatteryMapper;
+import ro.mycode.solarsyncbroker.battery.mapper.CommandExecutionMapper;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
+import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
+import ro.mycode.solarsyncbroker.house.exceptions.HouseNotFoundException;
+import ro.mycode.solarsyncbroker.house.model.House;
+import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
+
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Component
 public class BatteryCommandServiceImpl implements BatteryCommandService {
@@ -20,10 +26,17 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
 
     private final BatteryRepository batteryRepository;
     private final BatteryCommandValidator validator;
+    private final CommandExecutionRepository repository;
+    private final HouseRepository houseRepository;
 
-    public BatteryCommandServiceImpl(BatteryRepository batteryRepository, BatteryCommandValidator validator) {
+    public BatteryCommandServiceImpl(BatteryRepository batteryRepository,
+                                     BatteryCommandValidator validator,
+                                     CommandExecutionRepository repository,
+                                     HouseRepository houseRepository) {
         this.batteryRepository = batteryRepository;
         this.validator = validator;
+        this.repository = repository;
+        this.houseRepository = houseRepository;
     }
 
     @Override
@@ -77,5 +90,37 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
         }
 
         return this.batteryRepository.save(battery);
+    }
+
+    @Override
+    @Transactional
+    public CommandExecutionResponse executeCommand(Long houseId, BatteryCommandRequest request, String username) {
+        House house = houseRepository.findById(houseId)
+                .orElseThrow(() -> new HouseNotFoundException());
+
+        Battery battery = batteryRepository.findBatteryByHouseId(houseId)
+                .orElseThrow(BatteryNotFoundException::new);
+
+
+        battery.setSocPercent(request.targetSoc().doubleValue());
+        batteryRepository.save(battery);
+
+        CommandExecution execution = CommandExecution.builder()
+                .houseId(houseId)
+                .commandType(request.commandType())
+                .targetSoc(request.targetSoc())
+                .status("SUCCESS")
+                .executedBy(username)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        CommandExecution saved = repository.save(execution);
+        return CommandExecutionMapper.commandExecutionToResponse(saved);    }
+
+    @Override
+    public List<CommandExecutionResponse> getCommandsForHouse(Long houseId) {
+        return repository.findByHouseId(houseId).stream()
+                .map(CommandExecutionMapper::commandExecutionToResponse)
+                .toList();
     }
 }

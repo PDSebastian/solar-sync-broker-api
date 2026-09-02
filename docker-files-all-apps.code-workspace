@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../dev-ops/docker-files-all-apps"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../../aws"
+		}
+	],
+	"settings": {}
+}
