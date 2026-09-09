@@ -3,15 +3,18 @@ package ro.mycode.solarsyncbroker.unitTests.serviceTests;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryCommand;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
+import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
 import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandService;
 import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandServiceImpl;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryAction;
 import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandValidator;
+import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,12 +30,17 @@ class BatteryCommandServiceTests {
     @Mock
     private BatteryCommandValidator validator;
 
-    private BatteryCommandService service;
+    @InjectMocks
+    private BatteryCommandServiceImpl service;
     private Battery baterie;
+    private BatteryCommandValidator batteryValidator;
+    private  HouseRepository houseRepository;
+    private CommandExecutionRepository commandExecutionRepository;
+
 
     @BeforeEach
     void setup() {
-        service = new BatteryCommandServiceImpl(repository, validator);
+        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository);
         baterie = Battery.builder()
                 .id(1L)
                 .socPercent(50.0)

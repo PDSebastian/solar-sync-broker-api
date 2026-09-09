@@ -101,7 +101,7 @@ public class AuthServiceImpl implements AuthService {
         if (userType == UserType.ADMIN) {
             permissions.addAll(Set.of(
                     UserPermissions.HOUSE_VIEW, UserPermissions.HOUSE_MANAGE,
-                    UserPermissions.BATTERY_VIEW, UserPermissions.BATTERY_MANAGE
+                    UserPermissions.BATTERY_VIEW, UserPermissions.BATTERY_CONFIG, UserPermissions.BATTERY_COMMAND
             ));
         } else {
             permissions.addAll(Set.of(

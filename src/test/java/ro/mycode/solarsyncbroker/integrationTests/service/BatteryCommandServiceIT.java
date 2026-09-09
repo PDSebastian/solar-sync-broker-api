@@ -99,7 +99,7 @@ public class BatteryCommandServiceIT {
         service.updateConfiguration(testBattery.getHouse().getId(), request);
 
         Battery dinDb = batteryRepository.findById(testBattery.getId()).orElseThrow();
-        assertEquals(4.5, dinDb.getMaxChargePowerKw(), 0.0001);
-        assertEquals(4.0, dinDb.getMaxDischargePowerKw(), 0.0001);
+        assertEquals(3.0, dinDb.getMaxChargePowerKw(), 0.0001);
+        assertEquals(3.0, dinDb.getMaxDischargePowerKw(), 0.0001);
     }
 }

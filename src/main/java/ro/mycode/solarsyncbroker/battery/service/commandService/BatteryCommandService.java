@@ -11,4 +11,5 @@ public interface BatteryCommandService {
     CommandExecutionResponse executeCommand(Long houseId, BatteryCommandRequest request, String username);
     List<CommandExecutionResponse> getCommandsForHouse(Long houseId);
 
+
 }

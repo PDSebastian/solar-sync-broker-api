@@ -1,5 +1,6 @@
 package ro.mycode.solarsyncbroker.battery.service.commandService;
 
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ro.mycode.solarsyncbroker.battery.command.model.CommandExecution;
@@ -13,6 +14,7 @@ import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
 import ro.mycode.solarsyncbroker.house.exceptions.HouseNotFoundException;
 import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
+import ro.mycode.solarsyncbroker.users.exceptions.UserNotFoundException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,7 +42,7 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public BatteryResponse updateConfiguration(Long houseId, BatteryConfigurationRequest request) {
         Battery battery = batteryRepository.findBatteryByHouseId(houseId)
                 .orElseThrow(BatteryNotFoundException::new);
@@ -98,6 +100,10 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
         House house = houseRepository.findById(houseId)
                 .orElseThrow(() -> new HouseNotFoundException());
 
+        if (!house.getOwner().getEmail().equals(username)) {
+            throw new AccessDeniedException()
+        }
+
         Battery battery = batteryRepository.findBatteryByHouseId(houseId)
                 .orElseThrow(BatteryNotFoundException::new);
 
@@ -123,4 +129,7 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
                 .map(CommandExecutionMapper::commandExecutionToResponse)
                 .toList();
     }
+
+
+
 }
