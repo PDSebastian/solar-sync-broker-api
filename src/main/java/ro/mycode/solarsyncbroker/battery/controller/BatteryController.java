@@ -57,8 +57,8 @@ public class BatteryController {
 
     @GetMapping("/{houseId}/battery/commands")
     @PreAuthorize("hasAuthority('BATTERY_COMMAND')")
-    public ResponseEntity<List<CommandExecutionResponse>> getCommands(@PathVariable Long houseId) {
-        List<CommandExecutionResponse> responses = batteryCommandService.getCommandsForHouse(houseId);
+    public ResponseEntity<List<CommandExecutionResponse>> getCommands(@PathVariable Long houseId,Principal principal) {
+        List<CommandExecutionResponse> responses = batteryCommandService.getCommandsForHouse(houseId,principal.getName());
         return ResponseEntity.ok(responses);
     }
 }

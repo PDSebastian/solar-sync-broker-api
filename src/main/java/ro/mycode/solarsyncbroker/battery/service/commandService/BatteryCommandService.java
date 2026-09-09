@@ -9,7 +9,7 @@ public interface BatteryCommandService {
     BatteryResponse updateConfiguration(Long houseId, BatteryConfigurationRequest request);
     Battery  applyCommand(Battery battery, BatteryCommand command, double deltaHours);
     CommandExecutionResponse executeCommand(Long houseId, BatteryCommandRequest request, String username);
-    List<CommandExecutionResponse> getCommandsForHouse(Long houseId);
+    List<CommandExecutionResponse> getCommandsForHouse(Long houseId,String username);
 
 
 }

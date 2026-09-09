@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import ro.mycode.solarsyncbroker.battery.command.model.CommandExecution;
 import ro.mycode.solarsyncbroker.battery.dtos.*;
+import ro.mycode.solarsyncbroker.battery.exceptions.AccessDeniedExceptions;
 import ro.mycode.solarsyncbroker.battery.exceptions.BatteryNotFoundException;
 import ro.mycode.solarsyncbroker.battery.mapper.BatteryMapper;
 import ro.mycode.solarsyncbroker.battery.mapper.CommandExecutionMapper;
@@ -16,6 +17,7 @@ import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
 import ro.mycode.solarsyncbroker.users.exceptions.UserNotFoundException;
 
+import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -30,15 +32,18 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
     private final BatteryCommandValidator validator;
     private final CommandExecutionRepository repository;
     private final HouseRepository houseRepository;
+    private CommandExecutionRepository commandExecutionRepository;
+    private CommandExecutionMapper commandExecutionMapper;
 
     public BatteryCommandServiceImpl(BatteryRepository batteryRepository,
                                      BatteryCommandValidator validator,
                                      CommandExecutionRepository repository,
-                                     HouseRepository houseRepository) {
+                                     HouseRepository houseRepository,CommandExecutionMapper commandExecutionMapper) {
         this.batteryRepository = batteryRepository;
         this.validator = validator;
         this.repository = repository;
         this.houseRepository = houseRepository;
+        this.commandExecutionMapper = commandExecutionMapper;
     }
 
     @Override
@@ -101,7 +106,7 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
                 .orElseThrow(() -> new HouseNotFoundException());
 
         if (!house.getOwner().getEmail().equals(username)) {
-            throw new AccessDeniedException()
+            throw new AccessDeniedExceptions();
         }
 
         Battery battery = batteryRepository.findBatteryByHouseId(houseId)
@@ -124,10 +129,14 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
         return CommandExecutionMapper.commandExecutionToResponse(saved);    }
 
     @Override
-    public List<CommandExecutionResponse> getCommandsForHouse(Long houseId) {
-        return repository.findByHouseId(houseId).stream()
-                .map(CommandExecutionMapper::commandExecutionToResponse)
-                .toList();
+    public List<CommandExecutionResponse> getCommandsForHouse(Long houseId,String  username) {
+        House house=houseRepository.findById(houseId).orElseThrow(HouseNotFoundException::new);
+
+        if (!house.getOwner().getEmail().equals(username)) {
+            throw new AccessDeniedExceptions();
+        }
+
+     return commandExecutionRepository.findByHouseId(houseId).stream().map(CommandExecutionMapper::commandExecutionToResponse).toList();
     }
 
 

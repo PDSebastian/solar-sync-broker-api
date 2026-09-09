@@ -7,6 +7,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryCommand;
+import ro.mycode.solarsyncbroker.battery.mapper.CommandExecutionMapper;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
 import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
@@ -36,11 +37,12 @@ class BatteryCommandServiceTests {
     private BatteryCommandValidator batteryValidator;
     private  HouseRepository houseRepository;
     private CommandExecutionRepository commandExecutionRepository;
+    CommandExecutionMapper commandExecutionMapper;
 
 
     @BeforeEach
     void setup() {
-        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository);
+        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository,commandExecutionMapper);
         baterie = Battery.builder()
                 .id(1L)
                 .socPercent(50.0)
