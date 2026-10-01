@@ -42,7 +42,7 @@ class BatteryCommandServiceTests {
 
     @BeforeEach
     void setup() {
-        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository,commandExecutionMapper);
+        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository);
         baterie = Battery.builder()
                 .id(1L)
                 .socPercent(50.0)

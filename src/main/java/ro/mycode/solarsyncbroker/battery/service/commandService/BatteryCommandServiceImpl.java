@@ -38,12 +38,12 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
     public BatteryCommandServiceImpl(BatteryRepository batteryRepository,
                                      BatteryCommandValidator validator,
                                      CommandExecutionRepository repository,
-                                     HouseRepository houseRepository,CommandExecutionMapper commandExecutionMapper) {
+                                     HouseRepository houseRepository) {
         this.batteryRepository = batteryRepository;
         this.validator = validator;
         this.repository = repository;
         this.houseRepository = houseRepository;
-        this.commandExecutionMapper = commandExecutionMapper;
+
     }
 
     @Override

@@ -14,7 +14,6 @@ RUN chmod +x mvnw
 RUN ./mvnw -q dependency:go-offline
 
 COPY src/ src/
-
 RUN ./mvnw -q -DskipTests package
 
 # ===== runtime stage =====
@@ -28,6 +27,6 @@ WORKDIR /app
 
 COPY --from=build --chown=app:app /app/target/*.jar app.jar
 
-EXPOSE 8090
+EXPOSE 8081
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
