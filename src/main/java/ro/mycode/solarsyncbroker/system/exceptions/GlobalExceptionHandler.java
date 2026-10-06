@@ -14,38 +14,39 @@ import ro.mycode.solarsyncbroker.users.exceptions.UserNotFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
     @ExceptionHandler({
             UserNotFoundException.class,
             BatteryNotFoundException.class,
-            HouseNotFoundException.class,
-            AccessDeniedExceptions.class
-
-
+            HouseNotFoundException.class
     })
     public ResponseEntity<String> handleNotFoundExceptions(RuntimeException e) {
-     ApiErrorResponse apiErrorResponse=ApiErrorResponse.builder()
-             .message(e.getMessage()).status(HttpStatus.NO_CONTENT.value()) .build();
+        ApiErrorResponse apiErrorResponse = ApiErrorResponse.builder()
+                .message(e.getMessage())
+                .status(HttpStatus.NOT_FOUND.value()) // Corectat la 404
+                .build();
         return new ResponseEntity<>(apiErrorResponse.error(), HttpStatus.NOT_FOUND);
-
     }
-    @ExceptionHandler({
 
+    @ExceptionHandler(AccessDeniedExceptions.class)
+    public ResponseEntity<String> handleAccessDeniedException(AccessDeniedExceptions e) {
+        ApiErrorResponse apiErrorResponse = ApiErrorResponse.builder()
+                .message(e.getMessage())
+                .status(HttpStatus.FORBIDDEN.value()) // Corectat la 403
+                .build();
+        return new ResponseEntity<>(apiErrorResponse.error(), HttpStatus.FORBIDDEN);
+    }
+
+    @ExceptionHandler({
             UserAlreadyexistsException.class,
             BatteryAlreadyExistsException.class,
             HouseAlreadyExistsExcption.class
-
     })
     public ResponseEntity<String> handleAlreadyExistsExceptions(RuntimeException e) {
-        ApiErrorResponse apiErrorResponse=ApiErrorResponse.builder()
+        ApiErrorResponse apiErrorResponse = ApiErrorResponse.builder()
                 .message(e.getMessage())
                 .status(HttpStatus.CONFLICT.value())
                 .build();
         return new ResponseEntity<>(apiErrorResponse.error(), HttpStatus.CONFLICT);
     }
-
-
-
-
-
-
 }
