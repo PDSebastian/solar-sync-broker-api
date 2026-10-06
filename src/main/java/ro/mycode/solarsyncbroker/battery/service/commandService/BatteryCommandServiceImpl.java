@@ -1,27 +1,28 @@
 package ro.mycode.solarsyncbroker.battery.service.commandService;
 
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service; // Recomandat în loc de @Component
 import org.springframework.transaction.annotation.Transactional;
 import ro.mycode.solarsyncbroker.battery.command.model.CommandExecution;
 import ro.mycode.solarsyncbroker.battery.dtos.*;
-import ro.mycode.solarsyncbroker.battery.exceptions.AccessDeniedExceptions;
 import ro.mycode.solarsyncbroker.battery.exceptions.BatteryNotFoundException;
 import ro.mycode.solarsyncbroker.battery.mapper.BatteryMapper;
 import ro.mycode.solarsyncbroker.battery.mapper.CommandExecutionMapper;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
 import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
+import ro.mycode.solarsyncbroker.house.exceptions.HouseAccessDeniedHandler;
 import ro.mycode.solarsyncbroker.house.exceptions.HouseNotFoundException;
 import ro.mycode.solarsyncbroker.house.model.House;
 import ro.mycode.solarsyncbroker.house.repository.HouseRepository;
 import ro.mycode.solarsyncbroker.users.exceptions.UserNotFoundException;
+import ro.mycode.solarsyncbroker.users.model.User;
+import ro.mycode.solarsyncbroker.users.model.UserType;
+import ro.mycode.solarsyncbroker.users.repository.UserRepository;
 
-import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Component
+@Service
 public class BatteryCommandServiceImpl implements BatteryCommandService {
 
     private static final double DEFAULT_CAPACITY_KWH = 10.0;
@@ -32,18 +33,18 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
     private final BatteryCommandValidator validator;
     private final CommandExecutionRepository repository;
     private final HouseRepository houseRepository;
-    private CommandExecutionRepository commandExecutionRepository;
-    private CommandExecutionMapper commandExecutionMapper;
+    private final UserRepository userRepository; // Adăugat aici
 
     public BatteryCommandServiceImpl(BatteryRepository batteryRepository,
                                      BatteryCommandValidator validator,
                                      CommandExecutionRepository repository,
-                                     HouseRepository houseRepository) {
+                                     HouseRepository houseRepository,
+                                     UserRepository userRepository) { // Injectat în constructor
         this.batteryRepository = batteryRepository;
         this.validator = validator;
         this.repository = repository;
         this.houseRepository = houseRepository;
-
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -102,43 +103,53 @@ public class BatteryCommandServiceImpl implements BatteryCommandService {
     @Override
     @Transactional
     public CommandExecutionResponse executeCommand(Long houseId, BatteryCommandRequest request, String username) {
+        User user = userRepository.findByEmail(username).orElseThrow(UserNotFoundException::new);
         House house = houseRepository.findById(houseId)
-                .orElseThrow(() -> new HouseNotFoundException());
+                .orElseThrow(HouseNotFoundException::new);
 
-        if (!house.getOwner().getEmail().equals(username)) {
-            throw new AccessDeniedExceptions();
+        if (user.getUserType() != UserType.ADMIN && !house.getOwner().getId().equals(user.getId())) {
+            throw new HouseAccessDeniedHandler();
         }
 
         Battery battery = batteryRepository.findBatteryByHouseId(houseId)
                 .orElseThrow(BatteryNotFoundException::new);
 
+        double defaultTickHours = 1.0;
+        BatteryCommand batteryCommand = new BatteryCommand(request.commandType(), request.targetSoc().doubleValue());
 
-        battery.setSocPercent(request.targetSoc().doubleValue());
-        batteryRepository.save(battery);
+        String status;
+        try {
+            applyCommand(battery, batteryCommand, defaultTickHours);
+            status = "SUCCESS";
+        } catch (Exception e) {
+            status = "REJECTED";
+        }
 
         CommandExecution execution = CommandExecution.builder()
                 .houseId(houseId)
-                .commandType(request.commandType())
+                .commandType(request.commandType().name())
                 .targetSoc(request.targetSoc())
-                .status("SUCCESS")
+                .status(status)
                 .executedBy(username)
                 .createdAt(LocalDateTime.now())
                 .build();
 
         CommandExecution saved = repository.save(execution);
-        return CommandExecutionMapper.commandExecutionToResponse(saved);    }
-
-    @Override
-    public List<CommandExecutionResponse> getCommandsForHouse(Long houseId,String  username) {
-        House house=houseRepository.findById(houseId).orElseThrow(HouseNotFoundException::new);
-
-        if (!house.getOwner().getEmail().equals(username)) {
-            throw new AccessDeniedExceptions();
-        }
-
-     return commandExecutionRepository.findByHouseId(houseId).stream().map(CommandExecutionMapper::commandExecutionToResponse).toList();
+        return CommandExecutionMapper.commandExecutionToResponse(saved);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public List<CommandExecutionResponse> getCommandsForHouse(Long houseId, String username) {
+        User user = userRepository.findByEmail(username).orElseThrow(UserNotFoundException::new);
+        House house = houseRepository.findById(houseId).orElseThrow(HouseNotFoundException::new);
 
+        if (user.getUserType() != UserType.ADMIN && !house.getOwner().getId().equals(user.getId())) {
+            throw new HouseAccessDeniedHandler();
+        }
 
+        return repository.findByHouseId(houseId).stream()
+                .map(CommandExecutionMapper::commandExecutionToResponse)
+                .toList();
+    }
 }

@@ -11,5 +11,6 @@ public interface HouseRepository extends JpaRepository<House, Long> {
 
     boolean existsByName(String name);
     List<House> findByOwnerId(Long ownerId);
+    House getById(Long id);
     Optional<House> findByIdAndOwnerId(Long id, Long ownerId);
 }

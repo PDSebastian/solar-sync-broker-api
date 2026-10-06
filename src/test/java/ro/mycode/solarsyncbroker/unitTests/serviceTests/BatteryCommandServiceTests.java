@@ -11,7 +11,6 @@ import ro.mycode.solarsyncbroker.battery.mapper.CommandExecutionMapper;
 import ro.mycode.solarsyncbroker.battery.model.Battery;
 import ro.mycode.solarsyncbroker.battery.repository.BatteryRepository;
 import ro.mycode.solarsyncbroker.battery.repository.CommandExecutionRepository;
-import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandService;
 import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandServiceImpl;
 import ro.mycode.solarsyncbroker.battery.dtos.BatteryAction;
 import ro.mycode.solarsyncbroker.battery.service.commandService.BatteryCommandValidator;
@@ -31,18 +30,24 @@ class BatteryCommandServiceTests {
     @Mock
     private BatteryCommandValidator validator;
 
+    @Mock
+    private HouseRepository houseRepository;
+
+    @Mock
+    private CommandExecutionRepository commandExecutionRepository;
+
+    @Mock
+    private CommandExecutionMapper commandExecutionMapper;
+
     @InjectMocks
     private BatteryCommandServiceImpl service;
-    private Battery baterie;
-    private BatteryCommandValidator batteryValidator;
-    private  HouseRepository houseRepository;
-    private CommandExecutionRepository commandExecutionRepository;
-    CommandExecutionMapper commandExecutionMapper;
 
+    private Battery baterie;
 
     @BeforeEach
     void setup() {
-        service = new BatteryCommandServiceImpl(repository, validator,commandExecutionRepository,houseRepository);
+
+
         baterie = Battery.builder()
                 .id(1L)
                 .socPercent(50.0)
@@ -54,7 +59,7 @@ class BatteryCommandServiceTests {
 
     @Test
     void testIncarcareReusita() {
-       BatteryCommand comanda = new BatteryCommand(BatteryAction.CHARGE, 2.0);
+        BatteryCommand comanda = new BatteryCommand(BatteryAction.CHARGE, 2.0);
         double oOra = 1.0;
 
         when(repository.save(any(Battery.class))).thenAnswer(i -> i.getArgument(0));

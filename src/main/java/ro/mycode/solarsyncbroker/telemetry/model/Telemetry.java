@@ -8,15 +8,16 @@ import ro.mycode.solarsyncbroker.house.model.House;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
+@Entity
 @Getter
 @Setter
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-@Table(name="Telemetry")
+@Table(name = "telemetry")
 public class Telemetry {
     @Id
-    @GeneratedValue(strategy= GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @NotNull
@@ -36,7 +37,6 @@ public class Telemetry {
     @JoinColumn(name = "house_id", nullable = false)
     private House house;
 
-
     @Override
     public String toString() {
         return "Telemetry{" +
@@ -47,7 +47,6 @@ public class Telemetry {
                 ", batterySocPercent=" + batterySocPercent +
                 ", batteryPowerKw=" + batteryPowerKw +
                 ", localDateTime=" + localDateTime +
-                ", house=" + house +
                 '}';
     }
 
@@ -55,12 +54,18 @@ public class Telemetry {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         Telemetry telemetry = (Telemetry) o;
-        return Objects.equals(id, telemetry.id) && Objects.equals(pvPowerKw, telemetry.pvPowerKw) && Objects.equals(loadPowerKw, telemetry.loadPowerKw) && Objects.equals(gridPowerKw, telemetry.gridPowerKw) && Objects.equals(batterySocPercent, telemetry.batterySocPercent) && Objects.equals(batteryPowerKw, telemetry.batteryPowerKw) && Objects.equals(localDateTime, telemetry.localDateTime) && Objects.equals(house, telemetry.house);
+        return Objects.equals(id, telemetry.id) &&
+                Objects.equals(pvPowerKw, telemetry.pvPowerKw) &&
+                Objects.equals(loadPowerKw, telemetry.loadPowerKw) &&
+                Objects.equals(gridPowerKw, telemetry.gridPowerKw) &&
+                Objects.equals(batterySocPercent, telemetry.batterySocPercent) &&
+                Objects.equals(batteryPowerKw, telemetry.batteryPowerKw) &&
+                Objects.equals(localDateTime, telemetry.localDateTime);
+
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, pvPowerKw, loadPowerKw, gridPowerKw, batterySocPercent, batteryPowerKw, localDateTime, house);
+        return Objects.hash(id, pvPowerKw, loadPowerKw, gridPowerKw, batterySocPercent, batteryPowerKw, localDateTime);
     }
-
 }
