@@ -7,6 +7,9 @@ on:
       - docker-compose-local.yaml
   workflow_dispatch:
 
+env:
+  IMAGE: sebi123q/sebi-online-schop-api
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -23,6 +26,8 @@ jobs:
 
       - name: Teste
         run: mvn -B test
+
+
 
 
   build-push:
