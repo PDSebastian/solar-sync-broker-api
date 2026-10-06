@@ -1,0 +1,25 @@
+name: build-push
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - docker-compose-local.yaml
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Teste
+        run: mvn -B test
