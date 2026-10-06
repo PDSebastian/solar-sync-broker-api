@@ -7,8 +7,12 @@ on:
       - docker-compose-local.yaml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   IMAGE: sebi123q/solarsyncbroker-app
+  RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
   test:
@@ -27,6 +31,16 @@ jobs:
       - name: Teste
         run: mvn -B test
 
+      - name: Slack
+        if: ${{ !cancelled() }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* · test · ${{ job.status }}\n<${{ env.RUN_URL }}|Vezi run-ul>"
+            
+
 
 
 
@@ -37,21 +51,70 @@ jobs:
       tag: ${{ steps.tag.outputs.value }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Tag
         id: tag
         run: echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Login Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: sebi123q
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Build si push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Slack
+        if: ${{ !cancelled() }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* · build-push · ${{ job.status }} · `${{ env.IMAGE }}:${{ steps.tag.outputs.value }}`\n<${{ env.RUN_URL }}|Vezi run-ul>"
+
+  update-compose:
+    needs: build-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.build-push.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Scrie tagul nou in compose
+        run: sed -i "s|${IMAGE}:.*|${IMAGE}:${TAG}|" docker-compose-local.yaml
+
+      - name: Commit si push
+        run: |
+          if git diff --quiet; then
+            echo "tagul ${TAG} era deja in compose"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docker-compose-local.yaml
+          git commit -m "compose: ${IMAGE}:${TAG}"
+          git push
+
+      - name: Slack
+        if: ${{ !cancelled() }}
+        uses: slackapi/slack-github-action@v4.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* · update-compose · ${{ job.status }} · compose pe `${{ env.TAG }}`\n<${{ env.RUN_URL }}|Vezi run-ul>"
