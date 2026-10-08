@@ -116,3 +116,34 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             text: "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *${{ github.repository }}* · update-compose · ${{ job.status }} · compose pe `${{ env.TAG }}`\n<${{ env.RUN_URL }}|Vezi run-ul>"
+            
+update-platform:
+  needs: build-push
+  runs-on: ubuntu-latest
+  env:
+    TAG: ${{ steps.tag.outputs.value  }}
+  steps:
+    - name: Checkout platforma
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.platform-deploy }}
+        ssh-key: ${{ secrets.PLATFORM_DEPLOY_KEY }}
+
+    - name: Scrie tagul nou in compose-ul platformei
+      run: |
+        grep -q "image: ${IMAGE}:" docker-compose.yaml
+        sed -i "s|image: ${IMAGE}:.*|image: ${IMAGE}:${TAG}|" docker-compose.yaml
+
+    - name: Commit si push
+      run: |
+        if git diff --quiet; then
+          echo "tagul ${TAG} era deja in platforma"
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add docker-compose.yaml
+        git commit -m "${IMAGE}:${TAG} din ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}"
+        git pull --rebase
+        git push
+          
